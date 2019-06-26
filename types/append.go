@@ -3,6 +3,7 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/hex"
+	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 	"math"
 	"reflect"
 	"strconv"
@@ -43,6 +44,8 @@ func Append(b []byte, v interface{}, flags int) []byte {
 		return AppendString(b, v, flags)
 	case time.Time:
 		return AppendTime(b, v, flags)
+	case timestamp.Timestamp:
+		return AppendGrpcTime(b, v, flags)
 	case []byte:
 		return AppendBytes(b, v, flags)
 	case ValueAppender:
