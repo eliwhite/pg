@@ -3,7 +3,9 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/hex"
+
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
+
 	"math"
 	"reflect"
 	"strconv"

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/go-pg/pg/internal"
+
+	_struct "github.com/golang/protobuf/ptypes/struct"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 )
 
@@ -61,6 +63,8 @@ func appender(typ reflect.Type, pgArray bool) AppenderFunc {
 		return appendTimeValue
 	case grpcTimeType:
 		return appendGrpcTimeValue
+	case grpcStructType:
+		return appendGrpcStructValue
 	case ipType:
 		return appendIPValue
 	case ipNetType:
@@ -191,4 +195,50 @@ func appendAppenderValue(b []byte, v reflect.Value, flags int) []byte {
 
 func appendDriverValuerValue(b []byte, v reflect.Value, flags int) []byte {
 	return appendDriverValuer(b, v.Interface().(driver.Valuer), flags)
+}
+
+func appendGrpcStructValue(b []byte, v reflect.Value, flags int) []byte {
+	s := v.Interface().(_struct.Struct)
+	m := DecodeToMap(&s)
+	bytes, err := json.Marshal(m)
+	if err != nil {
+		return AppendError(b, err)
+	}
+	return AppendJSONB(b, bytes, flags)
+}
+
+// DecodeToMap converts a pb.Struct to a map from strings to Go types.
+// DecodeToMap panics if s is invalid.
+func DecodeToMap(s *_struct.Struct) map[string]interface{} {
+	if s == nil {
+		return nil
+	}
+	m := map[string]interface{}{}
+	for k, v := range s.Fields {
+		m[k] = decodeValue(v)
+	}
+	return m
+}
+
+func decodeValue(v *_struct.Value) interface{} {
+	switch k := v.Kind.(type) {
+	case *_struct.Value_NullValue:
+		return nil
+	case *_struct.Value_NumberValue:
+		return k.NumberValue
+	case *_struct.Value_StringValue:
+		return k.StringValue
+	case *_struct.Value_BoolValue:
+		return k.BoolValue
+	case *_struct.Value_StructValue:
+		return DecodeToMap(k.StructValue)
+	case *_struct.Value_ListValue:
+		s := make([]interface{}, len(k.ListValue.Values))
+		for i, e := range k.ListValue.Values {
+			s[i] = decodeValue(e)
+		}
+		return s
+	default:
+		panic("protostruct: unknown kind")
+	}
 }

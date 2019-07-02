@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/go-pg/pg/internal"
 	"github.com/golang/protobuf/ptypes"
+	_struct "github.com/golang/protobuf/ptypes/struct"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 	"net"
 	"reflect"
@@ -20,6 +21,7 @@ var grpcTimeType = reflect.TypeOf((*timestamp.Timestamp)(nil)).Elem()
 var ipType = reflect.TypeOf((*net.IP)(nil)).Elem()
 var ipNetType = reflect.TypeOf((*net.IPNet)(nil)).Elem()
 var jsonRawMessageType = reflect.TypeOf((*json.RawMessage)(nil)).Elem()
+var grpcStructType = reflect.TypeOf((*_struct.Struct)(nil)).Elem()
 
 type ScannerFunc func(reflect.Value, Reader, int) error
 
@@ -67,6 +69,8 @@ func scanner(typ reflect.Type, pgArray bool) ScannerFunc {
 		return scanTimeValue
 	case grpcTimeType:
 		return scanGrpcTimeValue
+	case grpcStructType:
+		return scanGrpcStructValue
 	case ipType:
 		return scanIPValue
 	case ipNetType:
@@ -446,4 +450,21 @@ func scanSQLScanner(scanner sql.Scanner, rd Reader, n int) error {
 		return err
 	}
 	return scanner.Scan(tmp)
+}
+
+func scanGrpcStructValue(v reflect.Value, rd Reader, n int) error {
+	if !v.CanSet() {
+		return fmt.Errorf("pg: Scan(nonsettable %s)", v.Type())
+	}
+
+	// Zero value so it works with SelectOrInsert.
+	// TODO: better handle slices
+	v.Set(reflect.New(v.Type()).Elem())
+
+	if n == -1 {
+		return nil
+	}
+
+	dec := json.NewDecoder(rd)
+	return dec.Decode(v.Addr().Interface())
 }
