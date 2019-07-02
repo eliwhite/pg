@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/v9/orm"
 )
 
 type dummyFormatter struct{}
@@ -18,6 +18,7 @@ func (dummyFormatter) FormatQuery(b []byte, query string, params ...interface{})
 type QueryEvent struct {
 	StartTime time.Time
 	DB        orm.DB
+	Model     interface{}
 	Query     interface{}
 	Params    []interface{}
 	Attempt   int
@@ -70,7 +71,7 @@ func (db *baseDB) AddQueryHook(hook QueryHook) {
 func (db *baseDB) beforeQuery(
 	c context.Context,
 	ormDB orm.DB,
-	query interface{},
+	model, query interface{},
 	params []interface{},
 	attempt int,
 ) (context.Context, *QueryEvent, error) {
@@ -81,6 +82,7 @@ func (db *baseDB) beforeQuery(
 	event := &QueryEvent{
 		StartTime: time.Now(),
 		DB:        ormDB,
+		Model:     model,
 		Query:     query,
 		Params:    params,
 		Attempt:   attempt,

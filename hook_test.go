@@ -2,20 +2,19 @@ package pg_test
 
 import (
 	"context"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/go-pg/pg"
-	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/v9"
+	"github.com/go-pg/pg/v9/orm"
 )
 
 type HookTest struct {
 	Id    int
 	Value string
 
-	afterQuery  int
+	afterScan   int
 	afterSelect int
 
 	beforeInsert int
@@ -28,44 +27,52 @@ type HookTest struct {
 	afterDelete  int
 }
 
-func (t *HookTest) AfterQuery(c context.Context, db orm.DB) error {
-	t.afterQuery++
-	return nil
+var _ orm.AfterSelectHook = (*HookTest)(nil)
+var _ orm.BeforeInsertHook = (*HookTest)(nil)
+var _ orm.AfterInsertHook = (*HookTest)(nil)
+var _ orm.BeforeUpdateHook = (*HookTest)(nil)
+var _ orm.AfterUpdateHook = (*HookTest)(nil)
+var _ orm.BeforeDeleteHook = (*HookTest)(nil)
+var _ orm.AfterDeleteHook = (*HookTest)(nil)
+
+func (t *HookTest) AfterScan(c context.Context) (context.Context, error) {
+	t.afterScan++
+	return c, nil
 }
 
-func (t *HookTest) AfterSelect(c context.Context, db orm.DB) error {
+func (t *HookTest) AfterSelect(c context.Context) (context.Context, error) {
 	t.afterSelect++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) BeforeInsert(c context.Context, db orm.DB) error {
+func (t *HookTest) BeforeInsert(c context.Context) (context.Context, error) {
 	t.beforeInsert++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) AfterInsert(c context.Context, db orm.DB) error {
+func (t *HookTest) AfterInsert(c context.Context) (context.Context, error) {
 	t.afterInsert++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) BeforeUpdate(c context.Context, db orm.DB) error {
+func (t *HookTest) BeforeUpdate(c context.Context) (context.Context, error) {
 	t.beforeUpdate++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) AfterUpdate(c context.Context, db orm.DB) error {
+func (t *HookTest) AfterUpdate(c context.Context) (context.Context, error) {
 	t.afterUpdate++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) BeforeDelete(c context.Context, db orm.DB) error {
+func (t *HookTest) BeforeDelete(c context.Context) (context.Context, error) {
 	t.beforeDelete++
-	return nil
+	return c, nil
 }
 
-func (t *HookTest) AfterDelete(c context.Context, db orm.DB) error {
+func (t *HookTest) AfterDelete(c context.Context) (context.Context, error) {
 	t.afterDelete++
-	return nil
+	return c, nil
 }
 
 type queryHookTest struct {
@@ -101,37 +108,20 @@ var _ = Describe("HookTest", func() {
 		Expect(db.Close()).NotTo(HaveOccurred())
 	})
 
-	It("calls AfterQuery for a struct", func() {
-		var hook HookTest
-		_, err := db.QueryOne(&hook, "SELECT 1 AS id")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hook.afterQuery).To(Equal(1))
-		Expect(hook.afterSelect).To(Equal(0))
-	})
-
-	It("calls AfterQuery and AfterSelect for a struct model", func() {
+	It("calls AfterSelect for a struct model", func() {
 		var hook HookTest
 		err := db.Model(&hook).Select()
 		Expect(err).NotTo(HaveOccurred())
-		Expect(hook.afterQuery).To(Equal(1))
+		Expect(hook.afterScan).To(Equal(1))
 		Expect(hook.afterSelect).To(Equal(1))
 	})
 
-	It("calls AfterQuery for a slice", func() {
-		var hooks []HookTest
-		_, err := db.Query(&hooks, "SELECT 1 AS id")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hooks).To(HaveLen(1))
-		Expect(hooks[0].afterQuery).To(Equal(1))
-		Expect(hooks[0].afterSelect).To(Equal(0))
-	})
-
-	It("calls AfterQuery and AfterSelect for a slice model", func() {
+	It("calls AfterSelect for a slice model", func() {
 		var hooks []HookTest
 		err := db.Model(&hooks).Select()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(hooks).To(HaveLen(1))
-		Expect(hooks[0].afterQuery).To(Equal(1))
+		Expect(hooks[0].afterScan).To(Equal(1))
 		Expect(hooks[0].afterSelect).To(Equal(1))
 	})
 
@@ -142,7 +132,7 @@ var _ = Describe("HookTest", func() {
 		}
 		err := db.Insert(&hook)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(hook.afterQuery).To(Equal(0))
+		Expect(hook.afterScan).To(Equal(0))
 		Expect(hook.beforeInsert).To(Equal(1))
 		Expect(hook.afterInsert).To(Equal(1))
 	})
@@ -153,7 +143,7 @@ var _ = Describe("HookTest", func() {
 		}
 		err := db.Update(&hook)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(hook.afterQuery).To(Equal(0))
+		Expect(hook.afterScan).To(Equal(0))
 		Expect(hook.beforeUpdate).To(Equal(1))
 		Expect(hook.afterUpdate).To(Equal(1))
 	})
@@ -172,7 +162,7 @@ var _ = Describe("HookTest", func() {
 		}
 		err := db.Delete(&hook)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(hook.afterQuery).To(Equal(0))
+		Expect(hook.afterScan).To(Equal(0))
 		Expect(hook.beforeDelete).To(Equal(1))
 		Expect(hook.afterDelete).To(Equal(1))
 	})
@@ -321,50 +311,5 @@ var _ = Describe("OnQueryEvent", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(count).To(Equal(1))
 		})
-	})
-})
-
-type BeforeSelectQueryModel struct {
-	Id        int
-	DeletedAt time.Time
-}
-
-func (BeforeSelectQueryModel) BeforeSelectQuery(
-	c context.Context, db orm.DB, q *orm.Query,
-) (*orm.Query, error) {
-	q = q.Where("?TableAlias.deleted_at IS NULL")
-	return q, nil
-}
-
-var _ = Describe("BeforeSelectQueryModel", func() {
-	var db *pg.DB
-
-	BeforeEach(func() {
-		db = pg.Connect(pgOptions())
-
-		err := db.CreateTable((*BeforeSelectQueryModel)(nil), &orm.CreateTableOptions{
-			Temp: true,
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		models := []BeforeSelectQueryModel{
-			{Id: 1},
-			{Id: 2, DeletedAt: time.Now()},
-		}
-		_, err = db.Model(&models).Insert()
-		Expect(err).NotTo(HaveOccurred())
-	})
-
-	AfterEach(func() {
-		Expect(db.Close()).NotTo(HaveOccurred())
-	})
-
-	It("applies BeforeSelectQuery hook", func() {
-		var models []BeforeSelectQueryModel
-		err := db.Model(&models).Select()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(models).To(Equal([]BeforeSelectQueryModel{
-			{Id: 1},
-		}))
 	})
 })

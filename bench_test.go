@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-pg/pg"
-	"github.com/go-pg/pg/orm"
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9"
+	"github.com/go-pg/pg/v9/orm"
+	"github.com/go-pg/pg/v9/types"
 )
 
 func benchmarkDB() *pg.DB {
@@ -445,12 +445,12 @@ func (rs *OptRecords) Init() error {
 	return nil
 }
 
-func (rs *OptRecords) NewModel() orm.ColumnScanner {
+func (rs *OptRecords) NextColumnScanner() orm.ColumnScanner {
 	rs.C = append(rs.C, OptRecord{})
 	return &rs.C[len(rs.C)-1]
 }
 
-func (OptRecords) AddModel(_ orm.ColumnScanner) error {
+func (OptRecords) AddColumnScanner(_ orm.ColumnScanner) error {
 	return nil
 }
 

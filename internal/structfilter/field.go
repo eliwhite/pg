@@ -5,10 +5,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-pg/pg/internal"
-	"github.com/go-pg/pg/internal/iszero"
-	"github.com/go-pg/pg/internal/tag"
-	"github.com/go-pg/pg/types"
+	"github.com/vmihailenco/tagparser"
+
+	"github.com/go-pg/pg/v9/internal"
+	"github.com/go-pg/pg/v9/internal/iszero"
+	"github.com/go-pg/pg/v9/types"
 )
 
 type opCode int
@@ -62,7 +63,7 @@ func newField(sf reflect.StructField) *Field {
 		IsSlice: sf.Type.Kind() == reflect.Slice,
 	}
 
-	pgTag := tag.Parse(sf.Tag.Get("pg"))
+	pgTag := tagparser.Parse(sf.Tag.Get("pg"))
 	if pgTag.Name == "-" {
 		return nil
 	}

@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 )
@@ -37,18 +36,17 @@ func newManyModel(j *join) *manyModel {
 	return &m
 }
 
-func (m *manyModel) NewModel() ColumnScanner {
+func (m *manyModel) NextColumnScanner() ColumnScanner {
 	if m.sliceOfPtr {
 		m.strct = reflect.New(m.table.Type).Elem()
 	} else {
 		m.strct.Set(m.table.zeroStruct)
 	}
 	m.structInited = false
-	m.structTableModel.NewModel()
 	return m
 }
 
-func (m *manyModel) AddModel(model ColumnScanner) error {
+func (m *manyModel) AddColumnScanner(model ColumnScanner) error {
 	m.buf = modelID(m.buf[:0], m.strct, m.rel.FKs)
 	dstValues, ok := m.dstValues[string(m.buf)]
 	if !ok {
@@ -65,50 +63,5 @@ func (m *manyModel) AddModel(model ColumnScanner) error {
 		}
 	}
 
-	return nil
-}
-
-func (m *manyModel) AfterQuery(ctx context.Context, db DB) error {
-	if m.rel.JoinTable.HasFlag(AfterQueryHookFlag) {
-		var firstErrr error
-		for _, slices := range m.dstValues {
-			for _, slice := range slices {
-				err := callAfterQueryHookSlice(ctx, slice, m.sliceOfPtr, db)
-				if err != nil && firstErrr == nil {
-					firstErrr = err
-				}
-			}
-		}
-		return firstErrr
-	}
-
-	return nil
-}
-
-func (m *manyModel) AfterSelect(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) BeforeInsert(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) AfterInsert(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) BeforeUpdate(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) AfterUpdate(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) BeforeDelete(c context.Context, db DB) error {
-	return nil
-}
-
-func (m *manyModel) AfterDelete(c context.Context, db DB) error {
 	return nil
 }

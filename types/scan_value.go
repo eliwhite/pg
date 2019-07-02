@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-pg/pg/internal"
 	"github.com/golang/protobuf/ptypes"
 	_struct "github.com/golang/protobuf/ptypes/struct"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 	"net"
 	"reflect"
 	"time"
+
+	"github.com/go-pg/pg/v9/internal"
 )
 
 var valueScannerType = reflect.TypeOf((*ValueScanner)(nil)).Elem()

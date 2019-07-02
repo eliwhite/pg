@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/go-pg/pg/internal/parser"
+	"github.com/go-pg/pg/v9/internal/parser"
 	//	_struct "github.com/golang/protobuf/ptypes/struct"
 )
 

@@ -12,10 +12,10 @@ import (
 
 	"mellium.im/sasl"
 
-	"github.com/go-pg/pg/internal"
-	"github.com/go-pg/pg/internal/pool"
-	"github.com/go-pg/pg/orm"
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/internal"
+	"github.com/go-pg/pg/v9/internal/pool"
+	"github.com/go-pg/pg/v9/orm"
+	"github.com/go-pg/pg/v9/types"
 )
 
 const (
@@ -848,12 +848,12 @@ func readSimpleQueryData(rd *internal.BufReader, mod interface{}) (*result, erro
 				}
 			}
 		case dataRowMsg:
-			m := res.model.NewModel()
-			if err := readDataRow(rd, m, rd.Columns); err != nil {
+			scanner := res.model.NextColumnScanner()
+			if err := readDataRow(rd, scanner, rd.Columns); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}
-			} else if err := res.model.AddModel(m); err != nil {
+			} else if err := res.model.AddColumnScanner(scanner); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -930,12 +930,12 @@ func readExtQueryData(rd *internal.BufReader, mod interface{}, columns [][]byte)
 				}
 			}
 
-			m := res.model.NewModel()
-			if err := readDataRow(rd, m, columns); err != nil {
+			scanner := res.model.NextColumnScanner()
+			if err := readDataRow(rd, scanner, columns); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}
-			} else if err := res.model.AddModel(m); err != nil {
+			} else if err := res.model.AddColumnScanner(scanner); err != nil {
 				if firstErr == nil {
 					firstErr = err
 				}

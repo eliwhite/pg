@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/go-pg/pg/internal"
+	"github.com/go-pg/pg/v9/internal"
 	"github.com/golang/protobuf/ptypes"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 )

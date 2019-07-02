@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/types"
 )
 
 type scanValuesModel struct {
@@ -25,7 +25,7 @@ func (scanValuesModel) useQueryOne() bool {
 	return true
 }
 
-func (m scanValuesModel) NewModel() ColumnScanner {
+func (m scanValuesModel) NextColumnScanner() ColumnScanner {
 	return m
 }
 
@@ -56,7 +56,7 @@ func (scanReflectValuesModel) useQueryOne() bool {
 	return true
 }
 
-func (m scanReflectValuesModel) NewModel() ColumnScanner {
+func (m scanReflectValuesModel) NextColumnScanner() ColumnScanner {
 	return m
 }
 

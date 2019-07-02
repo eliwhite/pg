@@ -1,13 +1,12 @@
 package orm
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
 
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/types"
 )
 
 var errModelNil = errors.New("pg: Model(nil)")
@@ -18,34 +17,30 @@ type useQueryOne interface {
 
 type HooklessModel interface {
 	// Init is responsible to initialize/reset model state.
-	// It is called only once no matter how many rows
-	// were returned by database.
+	// It is called only once no matter how many rows were returned.
 	Init() error
 
-	// NewModel returns ColumnScanner that is used to scan columns
+	// NextColumnScanner returns a ColumnScanner that is used to scan columns
 	// from the current row. It is called once for every row.
-	NewModel() ColumnScanner
+	NextColumnScanner() ColumnScanner
 
-	// AddModel adds ColumnScanner created by NewModel to the Collection.
-	AddModel(ColumnScanner) error
+	// AddColumnScanner adds the ColumnScanner to the model.
+	AddColumnScanner(ColumnScanner) error
 }
 
 type Model interface {
 	HooklessModel
 
-	AfterQuery(context.Context, DB) error
+	AfterSelectHook
 
-	BeforeSelectQuery(context.Context, DB, *Query) (*Query, error)
-	AfterSelect(context.Context, DB) error
+	BeforeInsertHook
+	AfterInsertHook
 
-	BeforeInsert(context.Context, DB) error
-	AfterInsert(context.Context, DB) error
+	BeforeUpdateHook
+	AfterUpdateHook
 
-	BeforeUpdate(context.Context, DB) error
-	AfterUpdate(context.Context, DB) error
-
-	BeforeDelete(context.Context, DB) error
-	AfterDelete(context.Context, DB) error
+	BeforeDeleteHook
+	AfterDeleteHook
 }
 
 func NewModel(values ...interface{}) (Model, error) {

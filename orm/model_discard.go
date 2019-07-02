@@ -1,7 +1,7 @@
 package orm
 
 import (
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/types"
 )
 
 type Discard struct {
@@ -14,11 +14,11 @@ func (Discard) Init() error {
 	return nil
 }
 
-func (m Discard) NewModel() ColumnScanner {
+func (m Discard) NextColumnScanner() ColumnScanner {
 	return m
 }
 
-func (m Discard) AddModel(ColumnScanner) error {
+func (m Discard) AddColumnScanner(ColumnScanner) error {
 	return nil
 }
 

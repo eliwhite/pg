@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/types"
 )
 
 type sliceTableModel struct {
@@ -77,66 +77,72 @@ func (m *sliceTableModel) Init() error {
 	return nil
 }
 
-func (m *sliceTableModel) NewModel() ColumnScanner {
+func (m *sliceTableModel) NextColumnScanner() ColumnScanner {
 	m.strct = m.nextElem()
 	m.structInited = false
 	return m
 }
 
-func (m *sliceTableModel) AfterQuery(ctx context.Context, db DB) error {
-	if m.table.HasFlag(AfterQueryHookFlag) {
-		return callAfterQueryHookSlice(ctx, m.slice, m.sliceOfPtr, db)
-	}
+func (m *sliceTableModel) AddColumnScanner(_ ColumnScanner) error {
 	return nil
 }
 
-func (m *sliceTableModel) AfterSelect(ctx context.Context, db DB) error {
+var _ AfterScanHook = (*sliceTableModel)(nil)
+
+func (m *sliceTableModel) AfterScan(c context.Context) (context.Context, error) {
+	if m.table.HasFlag(AfterScanHookFlag) {
+		return callAfterScanHookSlice(c, m.slice, m.sliceOfPtr)
+	}
+	return c, nil
+}
+
+func (m *sliceTableModel) AfterSelect(c context.Context) (context.Context, error) {
 	if m.table.HasFlag(AfterSelectHookFlag) {
-		return callAfterSelectHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+		return callAfterSelectHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) BeforeInsert(ctx context.Context, db DB) error {
+func (m *sliceTableModel) BeforeInsert(c context.Context) (context.Context, error) {
 	if m.table.HasFlag(BeforeInsertHookFlag) {
-		return callBeforeInsertHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+		return callBeforeInsertHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) AfterInsert(ctx context.Context, db DB) error {
+func (m *sliceTableModel) AfterInsert(c context.Context) (context.Context, error) {
 	if m.table.HasFlag(AfterInsertHookFlag) {
-		return callAfterInsertHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+		return callAfterInsertHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) BeforeUpdate(ctx context.Context, db DB) error {
-	if m.table.HasFlag(BeforeUpdateHookFlag) {
-		return callBeforeUpdateHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+func (m *sliceTableModel) BeforeUpdate(c context.Context) (context.Context, error) {
+	if m.table.HasFlag(BeforeUpdateHookFlag) && !m.IsNil() {
+		return callBeforeUpdateHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) AfterUpdate(ctx context.Context, db DB) error {
+func (m *sliceTableModel) AfterUpdate(c context.Context) (context.Context, error) {
 	if m.table.HasFlag(AfterUpdateHookFlag) {
-		return callAfterUpdateHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+		return callAfterUpdateHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) BeforeDelete(ctx context.Context, db DB) error {
-	if m.table.HasFlag(BeforeDeleteHookFlag) {
-		return callBeforeDeleteHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+func (m *sliceTableModel) BeforeDelete(c context.Context) (context.Context, error) {
+	if m.table.HasFlag(BeforeDeleteHookFlag) && !m.IsNil() {
+		return callBeforeDeleteHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
-func (m *sliceTableModel) AfterDelete(ctx context.Context, db DB) error {
-	if m.table.HasFlag(AfterDeleteHookFlag) {
-		return callAfterDeleteHookSlice(ctx, m.slice, m.sliceOfPtr, db)
+func (m *sliceTableModel) AfterDelete(c context.Context) (context.Context, error) {
+	if m.table.HasFlag(AfterDeleteHookFlag) && !m.IsNil() {
+		return callAfterDeleteHookSlice(c, m.slice, m.sliceOfPtr)
 	}
-	return nil
+	return c, nil
 }
 
 func (m *sliceTableModel) nextElem() reflect.Value {

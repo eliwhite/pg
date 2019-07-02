@@ -7,49 +7,48 @@ import (
 
 type hookStubs struct{}
 
-func (hookStubs) AfterQuery(_ context.Context, _ DB) error {
-	return nil
+var _ AfterSelectHook = (*hookStubs)(nil)
+var _ BeforeInsertHook = (*hookStubs)(nil)
+var _ AfterInsertHook = (*hookStubs)(nil)
+var _ BeforeUpdateHook = (*hookStubs)(nil)
+var _ AfterUpdateHook = (*hookStubs)(nil)
+var _ BeforeDeleteHook = (*hookStubs)(nil)
+var _ AfterDeleteHook = (*hookStubs)(nil)
+
+func (hookStubs) AfterSelect(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) BeforeSelectQuery(_ context.Context, db DB, q *Query) (*Query, error) {
-	return q, nil
+func (hookStubs) BeforeInsert(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) AfterSelect(_ context.Context, _ DB) error {
-	return nil
+func (hookStubs) AfterInsert(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) BeforeInsert(_ context.Context, _ DB) error {
-	return nil
+func (hookStubs) BeforeUpdate(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) AfterInsert(_ context.Context, _ DB) error {
-	return nil
+func (hookStubs) AfterUpdate(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) BeforeUpdate(_ context.Context, _ DB) error {
-	return nil
+func (hookStubs) BeforeDelete(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
-func (hookStubs) AfterUpdate(_ context.Context, _ DB) error {
-	return nil
-}
-
-func (hookStubs) BeforeDelete(_ context.Context, _ DB) error {
-	return nil
-}
-
-func (hookStubs) AfterDelete(_ context.Context, _ DB) error {
-	return nil
+func (hookStubs) AfterDelete(c context.Context) (context.Context, error) {
+	return c, nil
 }
 
 func callHookSlice(
-	ctx context.Context,
+	c context.Context,
 	slice reflect.Value,
 	ptr bool,
-	db DB,
-	hook func(context.Context, reflect.Value, DB) error,
-) error {
+	hook func(context.Context, reflect.Value) (context.Context, error),
+) (context.Context, error) {
 	var firstErr error
 	for i := 0; i < slice.Len(); i++ {
 		v := slice.Index(i)
@@ -57,12 +56,178 @@ func callHookSlice(
 			v = v.Addr()
 		}
 
-		err := hook(ctx, v, db)
+		var err error
+		c, err = hook(c, v)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	return firstErr
+	return c, firstErr
+}
+
+//------------------------------------------------------------------------------
+
+type AfterScanHook interface {
+	AfterScan(context.Context) (context.Context, error)
+}
+
+var afterScanHookType = reflect.TypeOf((*AfterScanHook)(nil)).Elem()
+
+func callAfterScanHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(AfterScanHook).AfterScan(c)
+}
+
+func callAfterScanHookSlice(c context.Context, slice reflect.Value, ptr bool) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callAfterScanHook)
+}
+
+//------------------------------------------------------------------------------
+
+type AfterSelectHook interface {
+	AfterSelect(context.Context) (context.Context, error)
+}
+
+var afterSelectHookType = reflect.TypeOf((*AfterSelectHook)(nil)).Elem()
+
+func callAfterSelectHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(AfterSelectHook).AfterSelect(c)
+}
+
+func callAfterSelectHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callAfterSelectHook)
+}
+
+//------------------------------------------------------------------------------
+
+type BeforeInsertHook interface {
+	BeforeInsert(context.Context) (context.Context, error)
+}
+
+var beforeInsertHookType = reflect.TypeOf((*BeforeInsertHook)(nil)).Elem()
+
+func callBeforeInsertHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(BeforeInsertHook).BeforeInsert(c)
+}
+
+func callBeforeInsertHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callBeforeInsertHook)
+}
+
+//------------------------------------------------------------------------------
+
+type AfterInsertHook interface {
+	AfterInsert(context.Context) (context.Context, error)
+}
+
+var afterInsertHookType = reflect.TypeOf((*AfterInsertHook)(nil)).Elem()
+
+func callAfterInsertHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(AfterInsertHook).AfterInsert(c)
+}
+
+func callAfterInsertHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callAfterInsertHook)
+}
+
+//------------------------------------------------------------------------------
+
+type BeforeUpdateHook interface {
+	BeforeUpdate(context.Context) (context.Context, error)
+}
+
+var beforeUpdateHookType = reflect.TypeOf((*BeforeUpdateHook)(nil)).Elem()
+
+func callBeforeUpdateHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(BeforeUpdateHook).BeforeUpdate(c)
+}
+
+func callBeforeUpdateHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callBeforeUpdateHook)
+}
+
+//------------------------------------------------------------------------------
+
+type AfterUpdateHook interface {
+	AfterUpdate(context.Context) (context.Context, error)
+}
+
+var afterUpdateHookType = reflect.TypeOf((*AfterUpdateHook)(nil)).Elem()
+
+func callAfterUpdateHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(AfterUpdateHook).AfterUpdate(c)
+}
+
+func callAfterUpdateHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callAfterUpdateHook)
+}
+
+//------------------------------------------------------------------------------
+
+type BeforeDeleteHook interface {
+	BeforeDelete(context.Context) (context.Context, error)
+}
+
+var beforeDeleteHookType = reflect.TypeOf((*BeforeDeleteHook)(nil)).Elem()
+
+func callBeforeDeleteHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(BeforeDeleteHook).BeforeDelete(c)
+}
+
+func callBeforeDeleteHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callBeforeDeleteHook)
+}
+
+//------------------------------------------------------------------------------
+
+type AfterDeleteHook interface {
+	AfterDelete(context.Context) (context.Context, error)
+}
+
+var afterDeleteHookType = reflect.TypeOf((*AfterDeleteHook)(nil)).Elem()
+
+func callAfterDeleteHook(c context.Context, v reflect.Value) (context.Context, error) {
+	return v.Interface().(AfterDeleteHook).AfterDelete(c)
+}
+
+func callAfterDeleteHookSlice(
+	c context.Context, slice reflect.Value, ptr bool,
+) (context.Context, error) {
+	return callHookSlice(c, slice, ptr, callAfterDeleteHook)
+}
+
+//------------------------------------------------------------------------------
+
+var oldHooks = []reflect.Type{
+	oldAfterQueryHookType,
+	oldAfterQueryHookType2,
+	oldBeforeSelectQueryHookType,
+	oldBeforeSelectQueryHookType2,
+	oldAfterSelectHookType,
+	oldAfterSelectHookType2,
+	oldBeforeInsertHookType,
+	oldBeforeInsertHookType2,
+	oldAfterInsertHookType,
+	oldAfterInsertHookType2,
+	oldBeforeUpdateHookType,
+	oldBeforeUpdateHookType2,
+	oldAfterUpdateHookType,
+	oldAfterUpdateHookType2,
+	oldBeforeDeleteHookType,
+	oldBeforeDeleteHookType2,
+	oldAfterDeleteHookType,
+	oldAfterDeleteHookType2,
 }
 
 //------------------------------------------------------------------------------
@@ -73,19 +238,11 @@ type oldAfterQueryHook interface {
 
 var oldAfterQueryHookType = reflect.TypeOf((*oldAfterQueryHook)(nil)).Elem()
 
-type afterQueryHook interface {
+type oldAfterQueryHook2 interface {
 	AfterQuery(context.Context, DB) error
 }
 
-var afterQueryHookType = reflect.TypeOf((*afterQueryHook)(nil)).Elem()
-
-func callAfterQueryHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(afterQueryHook).AfterQuery(ctx, db)
-}
-
-func callAfterQueryHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callAfterQueryHook)
-}
+var oldAfterQueryHookType2 = reflect.TypeOf((*oldAfterQueryHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -95,15 +252,11 @@ type oldBeforeSelectQueryHook interface {
 
 var oldBeforeSelectQueryHookType = reflect.TypeOf((*oldBeforeSelectQueryHook)(nil)).Elem()
 
-type beforeSelectQueryHook interface {
+type oldBeforeSelectQueryHook2 interface {
 	BeforeSelectQuery(context.Context, DB, *Query) (*Query, error)
 }
 
-var beforeSelectQueryHookType = reflect.TypeOf((*beforeSelectQueryHook)(nil)).Elem()
-
-func callBeforeSelectQueryHook(ctx context.Context, v reflect.Value, db DB, q *Query) (*Query, error) {
-	return v.Interface().(beforeSelectQueryHook).BeforeSelectQuery(ctx, db, q)
-}
+var oldBeforeSelectQueryHookType2 = reflect.TypeOf((*oldBeforeSelectQueryHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -113,19 +266,11 @@ type oldAfterSelectHook interface {
 
 var oldAfterSelectHookType = reflect.TypeOf((*oldAfterSelectHook)(nil)).Elem()
 
-type afterSelectHook interface {
+type oldAfterSelectHook2 interface {
 	AfterSelect(context.Context, DB) error
 }
 
-var afterSelectHookType = reflect.TypeOf((*afterSelectHook)(nil)).Elem()
-
-func callAfterSelectHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(afterSelectHook).AfterSelect(ctx, db)
-}
-
-func callAfterSelectHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callAfterSelectHook)
-}
+var oldAfterSelectHookType2 = reflect.TypeOf((*oldAfterSelectHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -135,19 +280,11 @@ type oldBeforeInsertHook interface {
 
 var oldBeforeInsertHookType = reflect.TypeOf((*oldBeforeInsertHook)(nil)).Elem()
 
-type beforeInsertHook interface {
+type oldBeforeInsertHook2 interface {
 	BeforeInsert(context.Context, DB) error
 }
 
-var beforeInsertHookType = reflect.TypeOf((*beforeInsertHook)(nil)).Elem()
-
-func callBeforeInsertHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(beforeInsertHook).BeforeInsert(ctx, db)
-}
-
-func callBeforeInsertHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callBeforeInsertHook)
-}
+var oldBeforeInsertHookType2 = reflect.TypeOf((*oldBeforeInsertHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -157,19 +294,11 @@ type oldAfterInsertHook interface {
 
 var oldAfterInsertHookType = reflect.TypeOf((*oldAfterInsertHook)(nil)).Elem()
 
-type afterInsertHook interface {
+type oldAfterInsertHook2 interface {
 	AfterInsert(context.Context, DB) error
 }
 
-var afterInsertHookType = reflect.TypeOf((*afterInsertHook)(nil)).Elem()
-
-func callAfterInsertHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(afterInsertHook).AfterInsert(ctx, db)
-}
-
-func callAfterInsertHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callAfterInsertHook)
-}
+var oldAfterInsertHookType2 = reflect.TypeOf((*oldAfterInsertHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -179,19 +308,11 @@ type oldBeforeUpdateHook interface {
 
 var oldBeforeUpdateHookType = reflect.TypeOf((*oldBeforeUpdateHook)(nil)).Elem()
 
-type beforeUpdateHook interface {
+type oldBeforeUpdateHook2 interface {
 	BeforeUpdate(context.Context, DB) error
 }
 
-var beforeUpdateHookType = reflect.TypeOf((*beforeUpdateHook)(nil)).Elem()
-
-func callBeforeUpdateHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(beforeUpdateHook).BeforeUpdate(ctx, db)
-}
-
-func callBeforeUpdateHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callBeforeUpdateHook)
-}
+var oldBeforeUpdateHookType2 = reflect.TypeOf((*oldBeforeUpdateHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -201,19 +322,11 @@ type oldAfterUpdateHook interface {
 
 var oldAfterUpdateHookType = reflect.TypeOf((*oldAfterUpdateHook)(nil)).Elem()
 
-type afterUpdateHook interface {
+type oldAfterUpdateHook2 interface {
 	AfterUpdate(context.Context, DB) error
 }
 
-var afterUpdateHookType = reflect.TypeOf((*afterUpdateHook)(nil)).Elem()
-
-func callAfterUpdateHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(afterUpdateHook).AfterUpdate(ctx, db)
-}
-
-func callAfterUpdateHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callAfterUpdateHook)
-}
+var oldAfterUpdateHookType2 = reflect.TypeOf((*oldAfterUpdateHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -223,19 +336,11 @@ type oldBeforeDeleteHook interface {
 
 var oldBeforeDeleteHookType = reflect.TypeOf((*oldBeforeDeleteHook)(nil)).Elem()
 
-type beforeDeleteHook interface {
+type oldBeforeDeleteHook2 interface {
 	BeforeDelete(context.Context, DB) error
 }
 
-var beforeDeleteHookType = reflect.TypeOf((*beforeDeleteHook)(nil)).Elem()
-
-func callBeforeDeleteHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(beforeDeleteHook).BeforeDelete(ctx, db)
-}
-
-func callBeforeDeleteHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callBeforeDeleteHook)
-}
+var oldBeforeDeleteHookType2 = reflect.TypeOf((*oldBeforeDeleteHook2)(nil)).Elem()
 
 //------------------------------------------------------------------------------
 
@@ -245,16 +350,8 @@ type oldAfterDeleteHook interface {
 
 var oldAfterDeleteHookType = reflect.TypeOf((*oldAfterDeleteHook)(nil)).Elem()
 
-type afterDeleteHook interface {
+type oldAfterDeleteHook2 interface {
 	AfterDelete(context.Context, DB) error
 }
 
-var afterDeleteHookType = reflect.TypeOf((*afterDeleteHook)(nil)).Elem()
-
-func callAfterDeleteHook(ctx context.Context, v reflect.Value, db DB) error {
-	return v.Interface().(afterDeleteHook).AfterDelete(ctx, db)
-}
-
-func callAfterDeleteHookSlice(ctx context.Context, slice reflect.Value, ptr bool, db DB) error {
-	return callHookSlice(ctx, slice, ptr, db, callAfterDeleteHook)
-}
+var oldAfterDeleteHookType2 = reflect.TypeOf((*oldAfterDeleteHook2)(nil)).Elem()

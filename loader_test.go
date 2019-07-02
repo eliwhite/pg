@@ -3,9 +3,9 @@ package pg_test
 import (
 	"errors"
 
-	"github.com/go-pg/pg"
-	"github.com/go-pg/pg/orm"
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9"
+	"github.com/go-pg/pg/v9/orm"
+	"github.com/go-pg/pg/v9/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -112,11 +112,10 @@ func (t *LoaderTest) TestQueryStrings(c *C) {
 }
 
 type errLoader struct {
-	orm.Discard
 	err error
 }
 
-var _ orm.Model = (*errLoader)(nil)
+var _ orm.HooklessModel = (*errLoader)(nil)
 
 func newErrLoader(err error) *errLoader {
 	return &errLoader{
@@ -124,8 +123,16 @@ func newErrLoader(err error) *errLoader {
 	}
 }
 
-func (m *errLoader) NewModel() orm.ColumnScanner {
+func (m *errLoader) Init() error {
+	return nil
+}
+
+func (m *errLoader) NextColumnScanner() orm.ColumnScanner {
 	return m
+}
+
+func (m *errLoader) AddColumnScanner(_ orm.ColumnScanner) error {
+	return nil
 }
 
 func (m *errLoader) ScanColumn(int, string, types.Reader, int) error {

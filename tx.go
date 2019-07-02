@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-pg/pg/internal"
-	"github.com/go-pg/pg/internal/pool"
-	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/v9/internal"
+	"github.com/go-pg/pg/v9/internal/pool"
+	"github.com/go-pg/pg/v9/orm"
 )
 
 var errTxDone = errors.New("pg: transaction has already been committed or rolled back")
@@ -131,7 +131,7 @@ func (tx *Tx) ExecContext(c context.Context, query interface{}, params ...interf
 }
 
 func (tx *Tx) exec(c context.Context, query interface{}, params ...interface{}) (Result, error) {
-	c, evt, err := tx.db.beforeQuery(c, tx, query, params, 0)
+	c, evt, err := tx.db.beforeQuery(c, tx, nil, query, params, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -190,12 +190,12 @@ func (tx *Tx) query(
 	query interface{},
 	params ...interface{},
 ) (Result, error) {
-	c, evt, err := tx.db.beforeQuery(c, tx, query, params, 0)
+	c, evt, err := tx.db.beforeQuery(c, tx, model, query, params, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	var res Result
+	var res *result
 	err = tx.withConn(c, func(c context.Context, cn *pool.Conn) error {
 		res, err = tx.db.simpleQueryData(c, cn, model, query, params...)
 		if err := tx.db.afterQuery(c, evt, res, err); err != nil {
@@ -207,13 +207,16 @@ func (tx *Tx) query(
 		return nil, err
 	}
 
-	if mod := res.Model(); mod != nil && res.RowsReturned() > 0 {
-		if err := mod.AfterQuery(c, tx); err != nil {
-			return res, err
+	if res.model != nil && res.returned > 0 {
+		if m, ok := res.model.(orm.AfterScanHook); ok {
+			_, err = m.AfterScan(c)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	return res, err
+	return res, nil
 }
 
 // QueryOne is an alias for DB.QueryOne.

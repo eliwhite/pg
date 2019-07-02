@@ -8,8 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-pg/pg/internal"
-
+	"github.com/go-pg/pg/v9/internal"
 	_struct "github.com/golang/protobuf/ptypes/struct"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 )

@@ -3,8 +3,8 @@ package orm
 import (
 	"reflect"
 
-	"github.com/go-pg/pg/internal"
-	"github.com/go-pg/pg/types"
+	"github.com/go-pg/pg/v9/internal"
+	"github.com/go-pg/pg/v9/types"
 )
 
 type sliceModel struct {
@@ -30,7 +30,7 @@ func (m *sliceModel) Init() error {
 	return nil
 }
 
-func (m *sliceModel) NewModel() ColumnScanner {
+func (m *sliceModel) NextColumnScanner() ColumnScanner {
 	return m
 }
 

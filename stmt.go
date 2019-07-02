@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/go-pg/pg/internal"
-	"github.com/go-pg/pg/internal/pool"
-	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/v9/internal"
+	"github.com/go-pg/pg/v9/internal/pool"
+	"github.com/go-pg/pg/v9/orm"
 )
 
 var errStmtClosed = errors.New("pg: statement is closed")
@@ -92,7 +92,7 @@ func (stmt *Stmt) exec(c context.Context, params ...interface{}) (Result, error)
 			time.Sleep(stmt.db.retryBackoff(attempt - 1))
 		}
 
-		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, stmt.q, params, attempt)
+		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, nil, stmt.q, params, attempt)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ func (stmt *Stmt) query(c context.Context, model interface{}, params ...interfac
 			time.Sleep(stmt.db.retryBackoff(attempt - 1))
 		}
 
-		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, stmt.q, params, attempt)
+		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, model, stmt.q, params, attempt)
 		if err != nil {
 			return nil, err
 		}
@@ -169,17 +169,7 @@ func (stmt *Stmt) query(c context.Context, model interface{}, params ...interfac
 			break
 		}
 	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-
-	if mod := res.Model(); mod != nil && res.RowsReturned() > 0 {
-		if err := mod.AfterQuery(c, stmt.db.db); err != nil {
-			return res, err
-		}
-	}
-
-	return res, nil
+	return res, lastErr
 }
 
 // QueryOne acts like Query, but query must return only one row. It
@@ -264,13 +254,22 @@ func (stmt *Stmt) extQueryData(
 		return nil, err
 	}
 
-	var res Result
+	var res *result
 	err = cn.WithReader(c, stmt.db.opt.ReadTimeout, func(rd *internal.BufReader) error {
 		res, err = readExtQueryData(rd, model, columns)
 		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if res.model != nil && res.returned > 0 {
+		if m, ok := res.model.(orm.AfterScanHook); ok {
+			_, err = m.AfterScan(c)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return res, nil
