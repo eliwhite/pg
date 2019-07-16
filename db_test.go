@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"math"
 	"net"
 	"testing"
 	"time"
@@ -135,6 +136,23 @@ func TestAnynomousStructField(t *testing.T) {
 	}
 }
 
+func TestContextCanceled(t *testing.T) {
+	db := testDB()
+
+	c := context.Background()
+	c, cancel := context.WithCancel(c)
+	cancel()
+
+	_, err := db.ExecContext(c, "SELECT 1")
+	if err == nil {
+		t.Fatalf("got nil, expected an error")
+	}
+	wanted := "context canceled"
+	if err.Error() != wanted {
+		t.Fatalf("got %q, wanted %q", err, wanted)
+	}
+}
+
 var _ = Describe("DB", func() {
 	var db *pg.DB
 	var tx *pg.Tx
@@ -149,6 +167,30 @@ var _ = Describe("DB", func() {
 
 	AfterEach(func() {
 		Expect(db.Close()).NotTo(HaveOccurred())
+	})
+
+	Describe("uint64 in struct field", func() {
+		It("is appended and scanned as int64", func() {
+			type My struct {
+				ID uint64 `sql:"type:bigint"`
+			}
+
+			err := db.CreateTable((*My)(nil), &orm.CreateTableOptions{
+				Temp: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			my := &My{
+				ID: math.MaxUint64,
+			}
+			err = db.Insert(my)
+			Expect(err).NotTo(HaveOccurred())
+
+			my = &My{}
+			err = db.Model(my).Select()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(my.ID).To(Equal(uint64(math.MaxUint64)))
+		})
 	})
 
 	Describe("Query", func() {
