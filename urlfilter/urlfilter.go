@@ -1,4 +1,4 @@
-package urlvalues
+package urlfilter
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 	"github.com/go-pg/pg/v9/types"
 )
 
-// URLFilter is used with Query.Apply to add WHERE clauses from the URL values:
+// Filter is used with Query.Apply to add WHERE clauses from the URL values:
 //   - ?foo=bar - Where(`"foo" = 'bar'`)
 //   - ?foo=hello&foo=world - Where(`"foo" IN ('hello','world')`)
 //   - ?foo__neq=bar - Where(`"foo" != 'bar'`)
@@ -31,7 +31,6 @@ func NewFilter(values Values) *Filter {
 	}
 }
 
-// Values returns URL values.
 func (f *Filter) Values() Values {
 	return f.values
 }
@@ -87,7 +86,7 @@ func (f *Filter) Filters(q *orm.Query) (*orm.Query, error) {
 	return q, nil
 }
 
-// Filters is a shortcut for NewFilter(urlValues).Filters.
+// Filters is a shortcut for NewFilter(values).Filters.
 func Filters(values Values) func(*orm.Query) (*orm.Query, error) {
 	return NewFilter(values).Filters
 }

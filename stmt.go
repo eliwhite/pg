@@ -3,7 +3,6 @@ package pg
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/go-pg/pg/v9/internal"
 	"github.com/go-pg/pg/v9/internal/pool"
@@ -42,12 +41,13 @@ func (stmt *Stmt) prepare(c context.Context, q string) error {
 	var lastErr error
 	for attempt := 0; attempt <= stmt.db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(stmt.db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(c, stmt.db.retryBackoff(attempt-1)); err != nil {
+				return err
+			}
 
 			err := stmt.db.pool.(*pool.SingleConnPool).Reset()
 			if err != nil {
-				internal.Logger.Printf(err.Error())
-				continue
+				return err
 			}
 		}
 
@@ -89,7 +89,9 @@ func (stmt *Stmt) exec(c context.Context, params ...interface{}) (Result, error)
 	var lastErr error
 	for attempt := 0; attempt <= stmt.db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(stmt.db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(c, stmt.db.retryBackoff(attempt-1)); err != nil {
+				return nil, err
+			}
 		}
 
 		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, nil, stmt.q, params, attempt)
@@ -150,7 +152,9 @@ func (stmt *Stmt) query(c context.Context, model interface{}, params ...interfac
 	var lastErr error
 	for attempt := 0; attempt <= stmt.db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(stmt.db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(c, stmt.db.retryBackoff(attempt-1)); err != nil {
+				return nil, err
+			}
 		}
 
 		c, evt, err := stmt.db.beforeQuery(c, stmt.db.db, model, stmt.q, params, attempt)

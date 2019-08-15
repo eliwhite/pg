@@ -39,7 +39,7 @@ type Pooler interface {
 
 	Get(context.Context) (*Conn, error)
 	Put(*Conn)
-	Remove(*Conn)
+	Remove(*Conn, error)
 
 	Len() int
 	IdleLen() int
@@ -93,9 +93,7 @@ func NewConnPool(opt *Options) *ConnPool {
 		idleConns: make([]*Conn, 0, opt.PoolSize),
 	}
 
-	for i := 0; i < opt.MinIdleConns; i++ {
-		p.checkMinIdleConns()
-	}
+	p.checkMinIdleConns()
 
 	if opt.IdleTimeout > 0 && opt.IdleCheckFrequency > 0 {
 		go p.reaper(opt.IdleCheckFrequency)
@@ -108,31 +106,40 @@ func (p *ConnPool) checkMinIdleConns() {
 	if p.opt.MinIdleConns == 0 {
 		return
 	}
-	if p.poolSize < p.opt.PoolSize && p.idleConnsLen < p.opt.MinIdleConns {
+	for p.poolSize < p.opt.PoolSize && p.idleConnsLen < p.opt.MinIdleConns {
 		p.poolSize++
 		p.idleConnsLen++
-		go p.addIdleConn()
+		go func() {
+			err := p.addIdleConn()
+			if err != nil {
+				p.connsMu.Lock()
+				p.poolSize--
+				p.idleConnsLen--
+				p.connsMu.Unlock()
+			}
+		}()
 	}
 }
 
-func (p *ConnPool) addIdleConn() {
-	cn, err := p.newConn(context.TODO(), true)
+func (p *ConnPool) addIdleConn() error {
+	cn, err := p.dialConn(context.TODO(), true)
 	if err != nil {
-		return
+		return err
 	}
 
 	p.connsMu.Lock()
 	p.conns = append(p.conns, cn)
 	p.idleConns = append(p.idleConns, cn)
 	p.connsMu.Unlock()
+	return nil
 }
 
 func (p *ConnPool) NewConn(c context.Context) (*Conn, error) {
-	return p._NewConn(c, false)
+	return p.newConn(c, false)
 }
 
-func (p *ConnPool) _NewConn(c context.Context, pooled bool) (*Conn, error) {
-	cn, err := p.newConn(c, pooled)
+func (p *ConnPool) newConn(c context.Context, pooled bool) (*Conn, error) {
+	cn, err := p.dialConn(c, pooled)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +158,7 @@ func (p *ConnPool) _NewConn(c context.Context, pooled bool) (*Conn, error) {
 	return cn, nil
 }
 
-func (p *ConnPool) newConn(c context.Context, pooled bool) (*Conn, error) {
+func (p *ConnPool) dialConn(c context.Context, pooled bool) (*Conn, error) {
 	if p.closed() {
 		return nil, ErrClosed
 	}
@@ -237,7 +244,7 @@ func (p *ConnPool) Get(c context.Context) (*Conn, error) {
 
 	atomic.AddUint32(&p.stats.Misses, 1)
 
-	newcn, err := p._NewConn(c, true)
+	newcn, err := p.newConn(c, true)
 	if err != nil {
 		p.freeTurn()
 		return nil, err
@@ -304,8 +311,14 @@ func (p *ConnPool) popIdle() *Conn {
 }
 
 func (p *ConnPool) Put(cn *Conn) {
+	if cn.rd.Buffered() > 0 {
+		internal.Logger.Printf("Conn has unread data")
+		p.Remove(cn, BadConnError{})
+		return
+	}
+
 	if !cn.pooled {
-		p.Remove(cn)
+		p.Remove(cn, nil)
 		return
 	}
 
@@ -316,7 +329,7 @@ func (p *ConnPool) Put(cn *Conn) {
 	p.freeTurn()
 }
 
-func (p *ConnPool) Remove(cn *Conn) {
+func (p *ConnPool) Remove(cn *Conn, reason error) {
 	p.removeConnWithLock(cn)
 	p.freeTurn()
 	_ = p.closeConn(cn)

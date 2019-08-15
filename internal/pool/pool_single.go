@@ -12,14 +12,28 @@ const (
 	stateClosed  = 2
 )
 
+type BadConnError struct {
+	wrapped error
+}
+
+var _ error = (*BadConnError)(nil)
+
+func (e BadConnError) Error() string {
+	return "pg: Conn is in a bad state"
+}
+
+func (e BadConnError) Unwrap() error {
+	return e.wrapped
+}
+
 type SingleConnPool struct {
-	pool Pooler
+	pool  Pooler
+	level int32 // atomic
 
 	state uint32 // atomic
 	ch    chan *Conn
 
-	level      int32  // atomic
-	hasBadConn uint32 // atomic
+	_badConnError atomic.Value
 }
 
 var _ Pooler = (*SingleConnPool)(nil)
@@ -34,10 +48,6 @@ func NewSingleConnPool(pool Pooler) *SingleConnPool {
 	}
 	atomic.AddInt32(&p.level, 1)
 	return p
-}
-
-func (p *SingleConnPool) Clone() *SingleConnPool {
-	return NewSingleConnPool(p.pool)
 }
 
 func (p *SingleConnPool) SetConn(cn *Conn) {
@@ -68,8 +78,11 @@ func (p *SingleConnPool) Get(c context.Context) (*Conn, error) {
 			if atomic.CompareAndSwapUint32(&p.state, stateDefault, stateInited) {
 				return cn, nil
 			}
-			p.pool.Remove(cn)
+			p.pool.Remove(cn, ErrClosed)
 		case stateInited:
+			if err := p.badConnError(); err != nil {
+				return nil, err
+			}
 			cn, ok := <-p.ch
 			if !ok {
 				return nil, ErrClosed
@@ -94,20 +107,20 @@ func (p *SingleConnPool) Put(cn *Conn) {
 }
 
 func (p *SingleConnPool) freeConn(cn *Conn) {
-	if atomic.LoadUint32(&p.hasBadConn) == 1 {
-		p.pool.Remove(cn)
+	if err := p.badConnError(); err != nil {
+		p.pool.Remove(cn, err)
 	} else {
 		p.pool.Put(cn)
 	}
 }
 
-func (p *SingleConnPool) Remove(cn *Conn) {
+func (p *SingleConnPool) Remove(cn *Conn, reason error) {
 	defer func() {
 		if recover() != nil {
-			p.pool.Remove(cn)
+			p.pool.Remove(cn, ErrClosed)
 		}
 	}()
-	atomic.StoreUint32(&p.hasBadConn, 1)
+	p._badConnError.Store(BadConnError{wrapped: reason})
 	p.ch <- cn
 }
 
@@ -157,7 +170,7 @@ func (p *SingleConnPool) Close() error {
 }
 
 func (p *SingleConnPool) Reset() error {
-	if atomic.LoadUint32(&p.hasBadConn) == 0 {
+	if p.badConnError() == nil {
 		return nil
 	}
 
@@ -166,7 +179,8 @@ func (p *SingleConnPool) Reset() error {
 		if !ok {
 			return ErrClosed
 		}
-		p.pool.Remove(cn)
+		p.pool.Remove(cn, ErrClosed)
+		p._badConnError.Store(BadConnError{wrapped: nil})
 	default:
 		return fmt.Errorf("pg: SingleConnPool does not have a Conn")
 	}
@@ -176,5 +190,15 @@ func (p *SingleConnPool) Reset() error {
 		return fmt.Errorf("pg: invalid SingleConnPool state: %d", state)
 	}
 
+	return nil
+}
+
+func (p *SingleConnPool) badConnError() error {
+	if v := p._badConnError.Load(); v != nil {
+		err := v.(BadConnError)
+		if err.wrapped != nil {
+			return err
+		}
+	}
 	return nil
 }

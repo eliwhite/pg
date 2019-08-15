@@ -70,7 +70,7 @@ func (db *baseDB) retryBackoff(retry int) time.Duration {
 	return internal.RetryBackoff(retry, db.opt.MinRetryBackoff, db.opt.MaxRetryBackoff)
 }
 
-func (db *baseDB) conn(c context.Context) (*pool.Conn, error) {
+func (db *baseDB) getConn(c context.Context) (*pool.Conn, error) {
 	cn, err := db.pool.Get(c)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,10 @@ func (db *baseDB) conn(c context.Context) (*pool.Conn, error) {
 
 	err = db.initConn(c, cn)
 	if err != nil {
-		db.pool.Remove(cn)
+		db.pool.Remove(cn, err)
+		if err := internal.Unwrap(err); err != nil {
+			return nil, err
+		}
 		return nil, err
 	}
 
@@ -112,18 +115,18 @@ func (db *baseDB) initConn(c context.Context, cn *pool.Conn) error {
 	return nil
 }
 
-func (db *baseDB) freeConn(cn *pool.Conn, err error) {
-	if !isBadConn(err, false) {
-		db.pool.Put(cn)
+func (db *baseDB) releaseConn(cn *pool.Conn, err error) {
+	if isBadConn(err, false) {
+		db.pool.Remove(cn, err)
 	} else {
-		db.pool.Remove(cn)
+		db.pool.Put(cn)
 	}
 }
 
 func (db *baseDB) withConn(
 	c context.Context, fn func(context.Context, *pool.Conn) error,
 ) error {
-	cn, err := db.conn(c)
+	cn, err := db.getConn(c)
 	if err != nil {
 		return err
 	}
@@ -152,7 +155,7 @@ func (db *baseDB) withConn(
 			case fnDone <- struct{}{}: // signal fn finish, skip cancel goroutine
 			}
 		}
-		db.freeConn(cn, err)
+		db.releaseConn(cn, err)
 	}()
 
 	err = fn(c, cn)
@@ -160,7 +163,8 @@ func (db *baseDB) withConn(
 }
 
 func (db *baseDB) shouldRetry(err error) bool {
-	if err == nil {
+	switch err {
+	case nil, context.Canceled, context.DeadlineExceeded:
 		return false
 	}
 	if pgerr, ok := err.(Error); ok {
@@ -201,7 +205,9 @@ func (db *baseDB) exec(c context.Context, query interface{}, params ...interface
 	var lastErr error
 	for attempt := 0; attempt <= db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(c, db.retryBackoff(attempt-1)); err != nil {
+				return nil, err
+			}
 		}
 
 		c, evt, err := db.beforeQuery(c, db.db, nil, query, params, attempt)
@@ -261,7 +267,9 @@ func (db *baseDB) query(c context.Context, model, query interface{}, params ...i
 	var lastErr error
 	for attempt := 0; attempt <= db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(c, db.retryBackoff(attempt-1)); err != nil {
+				return nil, err
+			}
 		}
 
 		c, evt, err := db.beforeQuery(c, db.db, model, query, params, attempt)
@@ -456,8 +464,8 @@ func (db *baseDB) DropComposite(model interface{}, opt *orm.DropCompositeOptions
 	return orm.DropComposite(db.db, model, opt)
 }
 
-func (db *baseDB) FormatQuery(dst []byte, query string, params ...interface{}) []byte {
-	return db.fmter.FormatQuery(dst, query, params...)
+func (db *baseDB) Formatter() orm.QueryFormatter {
+	return db.fmter
 }
 
 func (db *baseDB) cancelRequest(processID, secretKey int32) error {

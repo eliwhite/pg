@@ -1,4 +1,4 @@
-package urlvalues
+package urlfilter
 
 import (
 	"github.com/go-pg/pg/v9/orm"
@@ -18,15 +18,11 @@ type Pager struct {
 
 func NewPager(values Values) *Pager {
 	p := new(Pager)
-	p.stickyErr = p.FromValues(values)
+	p.stickyErr = p.Decode(values)
 	return p
 }
 
-func (p *Pager) FromURLValues(values Values) error {
-	return p.FromValues(values)
-}
-
-func (p *Pager) FromValues(values Values) error {
+func (p *Pager) Decode(values Values) error {
 	limit, err := values.Int("limit")
 	if err != nil {
 		return err

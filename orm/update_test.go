@@ -10,6 +10,11 @@ type UpdateTest struct {
 	Value string `sql:"type:mytype"`
 }
 
+type SerialUpdateTest struct {
+	Id    uint64 `sql:"type:bigint,pk"`
+	Value string
+}
+
 var _ = Describe("Update", func() {
 	It("updates model", func() {
 		q := NewQuery(nil, &UpdateTest{}).WherePK()
@@ -58,7 +63,7 @@ var _ = Describe("Update", func() {
 		})
 
 		s := updateQueryString(q)
-		Expect(s).To(Equal(`UPDATE "update_tests" AS "update_test" SET "value" = _data."value" FROM (VALUES (1, 'hello'::mytype), (2, NULL::mytype)) AS _data("id", "value") WHERE "update_test"."id" = _data."id"`))
+		Expect(s).To(Equal(`UPDATE "update_tests" AS "update_test" SET "value" = _data."value" FROM (VALUES (1::bigint, 'hello'::mytype), (2::bigint, NULL::mytype)) AS _data("id", "value") WHERE "update_test"."id" = _data."id"`))
 	})
 
 	It("bulk updates overriding column value", func() {
@@ -72,6 +77,30 @@ var _ = Describe("Update", func() {
 
 		s := updateQueryString(q)
 		Expect(s).To(Equal(`UPDATE "update_tests" AS "update_test" SET "value" = _data."value" FROM (VALUES (123, 'hello'::mytype), (123, NULL::mytype)) AS _data("id", "value") WHERE "update_test"."id" = _data."id"`))
+	})
+
+	It("bulk updates with zero values", func() {
+		slice := []*UpdateTest{{
+			Id:    1,
+			Value: "hello",
+		}, {
+			Id: 2,
+		}}
+		q := NewQuery(nil, &slice)
+
+		s := updateQueryStringWithBlanks(q)
+		Expect(s).To(Equal(`UPDATE "update_tests" AS "update_test" SET "value" = COALESCE(_data."value", "update_test"."value") FROM (VALUES (1::bigint, 'hello'::mytype), (2::bigint, NULL::mytype)) AS _data("id", "value") WHERE "update_test"."id" = _data."id"`))
+	})
+
+	It("bulk updates with serial id", func() {
+		slice := []*SerialUpdateTest{{
+			Id:    1,
+			Value: "hello",
+		}}
+		q := NewQuery(nil, &slice)
+
+		s := updateQueryString(q)
+		Expect(s).To(Equal(`UPDATE "serial_update_tests" AS "serial_update_test" SET "value" = _data."value" FROM (VALUES (1::bigint, 'hello'::text)) AS _data("id", "value") WHERE "serial_update_test"."id" = _data."id"`))
 	})
 
 	It("returns an error for empty bulk update", func() {
@@ -93,10 +122,10 @@ var _ = Describe("Update", func() {
 		Expect(s).To(Equal(`WITH "wrapper" AS (SELECT "update_test"."id", "update_test"."value" FROM "update_tests" AS "update_test") UPDATE "update_tests" AS "update_test" SET "value" = NULL FROM "wrapper" WHERE (update_test.id = wrapper.id)`))
 	})
 
-	It("supports notnull and default", func() {
+	It("supports use_zero and default tags", func() {
 		type Model struct {
 			Id   int
-			Bool bool `sql:",notnull,default:_"`
+			Bool bool `sql:",default:_" pg:",use_zero"`
 		}
 
 		q := NewQuery(nil, &Model{}).WherePK()
@@ -121,6 +150,12 @@ var _ = Describe("Update", func() {
 
 func updateQueryString(q *Query) string {
 	upd := newUpdateQuery(q, false)
+	s := queryString(upd)
+	return s
+}
+
+func updateQueryStringWithBlanks(q *Query) string {
+	upd := newUpdateQuery(q, true)
 	s := queryString(upd)
 	return s
 }

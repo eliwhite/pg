@@ -32,9 +32,9 @@ type InheritInsertTest struct {
 
 type InsertNullTest struct {
 	F1 int
-	F2 int `sql:",notnull"`
+	F2 int `pg:",use_zero"`
 	F3 int `sql:",pk"`
-	F4 int `sql:",pk,notnull"`
+	F4 int `sql:",pk" pg:",use_zero"`
 }
 
 type InsertDefaultTest struct {
@@ -161,7 +161,7 @@ var _ = Describe("Insert", func() {
 		Expect(s).To(Equal(`INSERT INTO "insert_default_tests" ("id", "value") VALUES (1, DEFAULT)`))
 	})
 
-	It("supports notnull", func() {
+	It("supports use_zero tag", func() {
 		q := NewQuery(nil, &InsertNullTest{})
 
 		s := insertQueryString(q)
@@ -215,7 +215,7 @@ var _ = Describe("Insert", func() {
 	It("supports notnull and default", func() {
 		type Model struct {
 			Id   int
-			Bool bool `sql:",notnull,default:_"`
+			Bool bool `sql:",default:_"`
 		}
 
 		q := NewQuery(nil, &Model{})

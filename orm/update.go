@@ -167,8 +167,7 @@ func (q *updateQuery) appendSetStruct(fmter QueryFormatter, b []byte, strct refl
 
 	pos := len(b)
 	for _, f := range fields {
-		omitZero := f.OmitZero() && f.IsZeroValue(strct)
-		if omitZero && q.omitZero {
+		if q.omitZero && f.HasZeroValue(strct) {
 			continue
 		}
 
@@ -223,6 +222,11 @@ func (q *updateQuery) appendSetSlice(b []byte) ([]byte, error) {
 		fields = q.q.model.Table().DataFields
 	}
 
+	var table *Table
+	if q.omitZero {
+		table = q.q.model.Table()
+	}
+
 	for i, f := range fields {
 		if i > 0 {
 			b = append(b, ", "...)
@@ -230,8 +234,20 @@ func (q *updateQuery) appendSetSlice(b []byte) ([]byte, error) {
 
 		b = append(b, f.Column...)
 		b = append(b, " = "...)
+		if q.omitZero && table != nil {
+			b = append(b, "COALESCE("...)
+		}
 		b = append(b, "_data."...)
 		b = append(b, f.Column...)
+		if q.omitZero && table != nil {
+			b = append(b, ", "...)
+			if table.Alias != table.FullName {
+				b = append(b, table.Alias...)
+				b = append(b, '.')
+			}
+			b = append(b, f.Column...)
+			b = append(b, ")"...)
+		}
 	}
 
 	return b, nil
@@ -303,10 +319,8 @@ func (q *updateQuery) appendValues(
 		} else {
 			b = f.AppendValue(b, indirect(strct), 1)
 		}
-		if f.HasFlag(customTypeFlag) {
-			b = append(b, "::"...)
-			b = append(b, f.SQLType...)
-		}
+		b = append(b, "::"...)
+		b = append(b, f.SQLType...)
 	}
 	return b, nil
 }

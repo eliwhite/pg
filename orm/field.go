@@ -12,6 +12,7 @@ const (
 	PrimaryKeyFlag = uint8(1) << iota
 	ForeignKeyFlag
 	NotNullFlag
+	UseZeroFlag
 	UniqueFlag
 	ArrayFlag
 	customTypeFlag
@@ -20,12 +21,12 @@ const (
 type Field struct {
 	Field reflect.StructField
 	Type  reflect.Type
+	Index []int
 
 	GoName   string  // struct field name, e.g. Id
 	SQLName  string  // SQL name, .e.g. id
 	Column   types.Q // escaped SQL name, e.g. "id"
 	SQLType  string
-	Index    []int
 	Default  types.Q
 	OnDelete string
 	OnUpdate string
@@ -68,17 +69,30 @@ func (f *Field) Value(strct reflect.Value) reflect.Value {
 	return fieldByIndex(strct, f.Index)
 }
 
-func (f *Field) IsZeroValue(strct reflect.Value) bool {
-	return f.isZero(f.Value(strct))
+func (f *Field) HasZeroValue(strct reflect.Value) bool {
+	return f.hasZeroField(strct, f.Index)
 }
 
-func (f *Field) OmitZero() bool {
-	return !f.HasFlag(NotNullFlag)
+func (f *Field) hasZeroField(v reflect.Value, index []int) bool {
+	for _, idx := range index {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return true
+			}
+			v = v.Elem()
+		}
+		v = v.Field(idx)
+	}
+	return f.isZero(v)
+}
+
+func (f *Field) NullZero() bool {
+	return !f.HasFlag(UseZeroFlag)
 }
 
 func (f *Field) AppendValue(b []byte, strct reflect.Value, quote int) []byte {
 	fv := f.Value(strct)
-	if f.OmitZero() && f.isZero(fv) {
+	if f.NullZero() && f.isZero(fv) {
 		return types.AppendNull(b, quote)
 	}
 	if f.append == nil {

@@ -1,13 +1,14 @@
-package urlvalues
+package urlfilter
 
 import (
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/go-pg/pg/v9/internal/structfilter"
 )
 
-type Values map[string][]string
+type Values url.Values
 
 func (v Values) Has(name string) bool {
 	_, ok := v[name]

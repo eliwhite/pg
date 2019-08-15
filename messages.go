@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"bufio"
 	"context"
 	"crypto/md5" //nolint
 	"crypto/tls"
@@ -449,7 +450,7 @@ func appendQuery(fmter orm.QueryFormatter, dst []byte, query interface{}, params
 			model, ok := params[len(params)-1].(orm.TableModel)
 			if ok {
 				if v, ok := fmter.(orm.Formatter); ok {
-					fmter = v.WithModel(model)
+					fmter = v.WithTableModel(model)
 					params = params[:len(params)-1]
 				}
 			}
@@ -1072,14 +1073,18 @@ func readCopyData(rd *internal.BufReader, w io.Writer) (*result, error) {
 
 		switch c {
 		case copyDataMsg:
-			b, err := rd.ReadN(msgLen)
-			if err != nil {
-				return nil, err
-			}
+			for msgLen > 0 {
+				b, err := rd.ReadN(msgLen)
+				if err != nil && err != bufio.ErrBufferFull {
+					return nil, err
+				}
 
-			_, err = w.Write(b)
-			if err != nil {
-				return nil, err
+				_, err = w.Write(b)
+				if err != nil {
+					return nil, err
+				}
+
+				msgLen -= len(b)
 			}
 		case copyDoneMsg:
 			_, err := rd.ReadN(msgLen)

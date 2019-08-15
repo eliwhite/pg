@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"sync"
-	"time"
 
 	"github.com/go-pg/pg/v9/internal"
 	"github.com/go-pg/pg/v9/internal/pool"
@@ -41,7 +40,7 @@ func (db *baseDB) Begin() (*Tx, error) {
 		ctx: db.db.Context(),
 	}
 
-	err := tx.begin()
+	err := tx.begin(tx.ctx)
 	if err != nil {
 		tx.close()
 		return nil, err
@@ -319,25 +318,26 @@ func (tx *Tx) CopyTo(w io.Writer, query interface{}, params ...interface{}) (res
 	return res, err
 }
 
-// FormatQuery is an alias for DB.FormatQuery
-func (tx *Tx) FormatQuery(dst []byte, query string, params ...interface{}) []byte {
-	return tx.db.FormatQuery(dst, query, params...)
+// Formatter is an alias for DB.Formatter
+func (tx *Tx) Formatter() orm.QueryFormatter {
+	return tx.db.Formatter()
 }
 
-func (tx *Tx) begin() error {
+func (tx *Tx) begin(ctx context.Context) error {
 	var lastErr error
 	for attempt := 0; attempt <= tx.db.opt.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(tx.db.retryBackoff(attempt - 1))
+			if err := internal.Sleep(ctx, tx.db.retryBackoff(attempt-1)); err != nil {
+				return err
+			}
 
 			err := tx.db.pool.(*pool.SingleConnPool).Reset()
 			if err != nil {
-				internal.Logger.Printf(err.Error())
-				continue
+				return err
 			}
 		}
 
-		_, lastErr = tx.Exec("BEGIN")
+		_, lastErr = tx.ExecContext(ctx, "BEGIN")
 		if !tx.db.shouldRetry(lastErr) {
 			break
 		}

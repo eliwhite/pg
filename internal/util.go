@@ -1,9 +1,23 @@
 package internal
 
 import (
+	"context"
 	"reflect"
 	"strings"
+	"time"
 )
+
+func Sleep(ctx context.Context, dur time.Duration) error {
+	t := time.NewTimer(dur)
+	defer t.Stop()
+
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func MakeSliceNextElemFunc(v reflect.Value) func() reflect.Value {
 	if v.Kind() == reflect.Array {
@@ -75,4 +89,14 @@ func isPostgresKeyword(s string) bool {
 	default:
 		return false
 	}
+}
+
+func Unwrap(err error) error {
+	u, ok := err.(interface {
+		Unwrap() error
+	})
+	if !ok {
+		return nil
+	}
+	return u.Unwrap()
 }

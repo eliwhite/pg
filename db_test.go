@@ -6,8 +6,10 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +152,46 @@ func TestContextCanceled(t *testing.T) {
 	wanted := "context canceled"
 	if err.Error() != wanted {
 		t.Fatalf("got %q, wanted %q", err, wanted)
+	}
+}
+
+func TestBigColumn(t *testing.T) {
+	const colLen = 100000
+
+	type Test struct {
+		ID   int
+		Text string
+	}
+
+	db := pg.Connect(pgOptions())
+	defer db.Close()
+
+	err := db.CreateTable((*Test)(nil), &orm.CreateTableOptions{
+		Temp: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.Insert(&Test{
+		Text: strings.Repeat("*", colLen),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	test := new(Test)
+	err = db.Model(test).Select()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(test.Text) != colLen {
+		t.Fatalf("got %d, wanted %d", len(test.Text), colLen)
+	}
+
+	_, err = db.CopyTo(ioutil.Discard, "COPY (SELECT * FROM tests) TO STDOUT WITH CSV")
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1327,7 +1369,7 @@ var _ = Describe("ORM", func() {
 			var author Author
 			err := db.Model(&author).
 				Column("author.*").
-				Column("Books.id", "Books.author_id", "Books.editor_id").
+				Relation("Books.id").Relation("Books.author_id").Relation("Books.editor_id").
 				Relation("Books.Author").
 				Relation("Books.Editor").
 				Relation("Books.Translations").
@@ -1996,7 +2038,7 @@ var _ = Describe("ORM", func() {
 	})
 
 	It("does not create zero model for null relation", func() {
-		newBook := new(Book)
+		newBook := &Book{Title: "new"}
 		err := db.Insert(newBook)
 		Expect(err).NotTo(HaveOccurred())
 

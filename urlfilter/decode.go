@@ -1,4 +1,4 @@
-package urlvalues
+package urlfilter
 
 import (
 	"reflect"

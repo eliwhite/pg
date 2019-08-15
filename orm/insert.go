@@ -81,6 +81,10 @@ func (q *insertQuery) AppendQuery(fmter QueryFormatter, b []byte) (_ []byte, err
 			return nil, err
 		}
 	} else {
+		if !q.q.hasModel() {
+			return nil, errModelNil
+		}
+
 		fields, err := q.q.getFields()
 		if err != nil {
 			return nil, err
@@ -180,7 +184,7 @@ func (q *insertQuery) appendValues(
 		switch {
 		case q.placeholder:
 			b = append(b, '?')
-		case (f.Default != "" || f.OmitZero()) && f.IsZeroValue(strct):
+		case (f.Default != "" || f.NullZero()) && f.HasZeroValue(strct):
 			b = append(b, "DEFAULT"...)
 			q.addReturningField(f)
 		default:

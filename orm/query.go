@@ -183,7 +183,7 @@ func (q *Query) GetModel() TableModel {
 
 func (q *Query) isSoftDelete() bool {
 	if q.model != nil {
-		return q.model.Table().SoftDeleteField != nil
+		return q.model.Table().SoftDeleteField != nil && !q.hasFlag(allWithDeletedFlag)
 	}
 	return false
 }
@@ -281,8 +281,11 @@ func (q *Query) Column(columns ...string) *Query {
 			continue
 		}
 
+		//TODO: remove
 		if q.model != nil {
 			if j := q.model.Join(column, nil); j != nil {
+				internal.Logger.Printf("DEPRECATED: replace Column(%q) with Relation(%q)",
+					column, column)
 				continue
 			}
 		}
@@ -569,7 +572,7 @@ func (q *Query) WherePK() *Query {
 //    - FooLT int - Where("foo < ?", strct.Foo)
 //    - FooLTE int - Where("foo <= ?", strct.Foo)
 //
-// urlvalues.Decode can be used to decode url.Values into the struct.
+// urlfilter.Decode can be used to decode url.Values into the struct.
 //
 // Following field tags are recognized:
 //    - pg:"-" - field is ignored.
@@ -939,7 +942,7 @@ func (q *Query) selectJoins(joins []join) error {
 		if j.Rel.Type == HasOneRelation || j.Rel.Type == BelongsToRelation {
 			err = q.selectJoins(j.JoinModel.GetJoins())
 		} else {
-			err = j.Select(q.db, q.New())
+			err = j.Select(q.db.Formatter(), q.New())
 		}
 		if err != nil {
 			return err
@@ -995,7 +998,10 @@ func (q *Query) SelectOrInsert(values ...interface{}) (inserted bool, _ error) {
 	var insertErr error
 	for i := 0; i < 5; i++ {
 		if i >= 2 {
-			time.Sleep(internal.RetryBackoff(i-2, 250*time.Millisecond, 5*time.Second))
+			dur := internal.RetryBackoff(i-2, 250*time.Millisecond, 5*time.Second)
+			if err := internal.Sleep(q.ctx, dur); err != nil {
+				return false, err
+			}
 		}
 
 		err := q.Select(values...)
@@ -1047,8 +1053,15 @@ func (q *Query) Update(scan ...interface{}) (Result, error) {
 	return q.update(scan, false)
 }
 
-// Update updates the model omitting null columns.
-func (q *Query) UpdateNotNull(scan ...interface{}) (Result, error) {
+// Update updates the model omitting fields with zero values such as:
+//   - empty string,
+//   - 0,
+//   - zero time,
+//   - empty map or slice,
+//   - byte array with all zeroes,
+//   - nil ptr,
+//   - types with method `IsZero() == true`.
+func (q *Query) UpdateNotZero(scan ...interface{}) (Result, error) {
 	return q.update(scan, true)
 }
 
