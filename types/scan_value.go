@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/protobuf/ptypes"
-	_struct "github.com/golang/protobuf/ptypes/struct"
-	timestamp "github.com/golang/protobuf/ptypes/timestamp"
 	"net"
 	"reflect"
 	"time"
+
+	"github.com/golang/protobuf/ptypes"
+	_struct "github.com/golang/protobuf/ptypes/struct"
+	timestamp "github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/valyala/fastjson"
 
 	"github.com/go-pg/pg/v9/internal"
 )
@@ -453,19 +455,77 @@ func scanSQLScanner(scanner sql.Scanner, rd Reader, n int) error {
 	return scanner.Scan(tmp)
 }
 
-func scanGrpcStructValue(v reflect.Value, rd Reader, n int) error {
-	if !v.CanSet() {
-		return fmt.Errorf("pg: Scan(nonsettable %s)", v.Type())
+func scanGrpcStructValue(val reflect.Value, rd Reader, n int) error {
+	if !val.CanSet() {
+		return fmt.Errorf("pg: Scan(nonsettable %s)", val.Type())
 	}
-
-	// Zero value so it works with SelectOrInsert.
-	// TODO: better handle slices
-	v.Set(reflect.New(v.Type()).Elem())
 
 	if n == -1 {
 		return nil
 	}
 
-	dec := json.NewDecoder(rd)
-	return dec.Decode(v.Addr().Interface())
+	b, err := rd.ReadFull()
+	if err != nil {
+		return err
+	}
+	var p fastjson.Parser
+	v, err := p.Parse(string(b))
+	if err != nil {
+		return err
+	}
+	fields := make(map[string]*_struct.Value)
+
+	v.GetObject().Visit(func(k []byte, v *fastjson.Value) {
+		newv := decodeJSONToStructValue(v)
+		fields[string(k)] = &newv
+	})
+	val.Set(reflect.ValueOf(_struct.Struct{Fields: fields}))
+	return nil
+}
+
+//func decodeJSONToStructValue(k []byte, v *fastjson.Value) _struct.Value {
+func decodeJSONToStructValue(v *fastjson.Value) _struct.Value {
+	switch v.Type() {
+	case fastjson.TypeNumber:
+		return _struct.Value{Kind: &_struct.Value_NumberValue{NumberValue: v.GetFloat64()}}
+	case fastjson.TypeString:
+		return _struct.Value{Kind: &_struct.Value_StringValue{StringValue: v.String()}}
+	case fastjson.TypeFalse:
+		return _struct.Value{Kind: &_struct.Value_BoolValue{BoolValue: false}}
+	case fastjson.TypeTrue:
+		return _struct.Value{Kind: &_struct.Value_BoolValue{BoolValue: true}}
+	case fastjson.TypeObject:
+		fields := make(map[string]*_struct.Value)
+		v.GetObject().Visit(func(k []byte, v2 *fastjson.Value) {
+			newv := decodeJSONToStructValue(v2)
+			fields[string(k)] = &newv
+		})
+		return _struct.Value{Kind: &_struct.Value_StructValue{StructValue: &_struct.Struct{Fields: fields}}}
+		/*
+			case map[string]interface{}:
+				vals := _struct.Struct{Fields: make(map[string]*_struct.Value)}
+				for i, v := range k {
+					newVal := decodeToStructValue(v)
+					vals.Fields[i] = &newVal
+				}
+				return _struct.Value{Kind: &_struct.Value_StructValue{StructValue: &vals}}
+
+			case map[interface{}]interface{}:
+				vals := _struct.Struct{Fields: make(map[string]*_struct.Value)}
+				for i, v := range k {
+					newVal := decodeToStructValue(v)
+					vals.Fields[i.(string)] = &newVal
+				}
+				return _struct.Value{Kind: &_struct.Value_StructValue{StructValue: &vals}}
+			case []interface{}:
+				vals := _struct.ListValue{}
+				for _, v := range k {
+					newVal := decodeToStructValue(v)
+					vals.Values = append(vals.Values, &newVal)
+				}
+				return _struct.Value{Kind: &_struct.Value_ListValue{ListValue: &vals}}
+		*/
+	default:
+		return _struct.Value{}
+	}
 }
