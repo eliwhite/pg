@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/go-pg/pg/v9/internal/iszero"
 	"github.com/go-pg/pg/v9/types"
+	"github.com/go-pg/zerochecker"
 )
 
 const (
@@ -15,7 +15,6 @@ const (
 	UseZeroFlag
 	UniqueFlag
 	ArrayFlag
-	customTypeFlag
 )
 
 type Field struct {
@@ -23,20 +22,21 @@ type Field struct {
 	Type  reflect.Type
 	Index []int
 
-	GoName   string  // struct field name, e.g. Id
-	SQLName  string  // SQL name, .e.g. id
-	Column   types.Q // escaped SQL name, e.g. "id"
-	SQLType  string
-	Default  types.Q
-	OnDelete string
-	OnUpdate string
+	GoName      string     // struct field name, e.g. Id
+	SQLName     string     // SQL name, .e.g. id
+	Column      types.Safe // escaped SQL name, e.g. "id"
+	SQLType     string
+	UserSQLType string
+	Default     types.Safe
+	OnDelete    string
+	OnUpdate    string
 
 	flags uint8
 
 	append types.AppenderFunc
 	scan   types.ScannerFunc
 
-	isZero iszero.Func
+	isZero zerochecker.Func
 }
 
 func indexEqual(ind1, ind2 []int) bool {

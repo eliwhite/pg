@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-pg/pg/v9/internal"
 	"github.com/go-pg/pg/v9/internal/pool"
@@ -29,9 +30,16 @@ type Tx struct {
 
 	stmtsMu sync.Mutex
 	stmts   []*Stmt
+
+	_closed int32
 }
 
 var _ orm.DB = (*Tx)(nil)
+
+// Context returns the context.Context of the transaction
+func (tx *Tx) Context() context.Context {
+	return tx.ctx
+}
 
 // Begin starts a transaction. Most callers should use RunInTransaction instead.
 func (db *baseDB) Begin() (*Tx, error) {
@@ -121,7 +129,7 @@ func (tx *Tx) Prepare(q string) (*Stmt, error) {
 
 // Exec is an alias for DB.Exec.
 func (tx *Tx) Exec(query interface{}, params ...interface{}) (Result, error) {
-	return tx.exec(context.Background(), query, params...)
+	return tx.exec(tx.ctx, query, params...)
 }
 
 // ExecContext acts like Exec but additionally receives a context
@@ -130,25 +138,26 @@ func (tx *Tx) ExecContext(c context.Context, query interface{}, params ...interf
 }
 
 func (tx *Tx) exec(c context.Context, query interface{}, params ...interface{}) (Result, error) {
-	c, evt, err := tx.db.beforeQuery(c, tx, nil, query, params, 0)
+	c, evt, err := tx.db.beforeQuery(c, tx, nil, query, params)
 	if err != nil {
 		return nil, err
 	}
 
 	var res Result
-	err = tx.withConn(c, func(c context.Context, cn *pool.Conn) error {
+	lastErr := tx.withConn(c, func(c context.Context, cn *pool.Conn) error {
 		res, err = tx.db.simpleQuery(c, cn, query, params...)
-		if err := tx.db.afterQuery(c, evt, res, err); err != nil {
-			return err
-		}
 		return err
 	})
-	return res, err
+
+	if err := tx.db.afterQuery(c, evt, res, lastErr); err != nil {
+		return nil, err
+	}
+	return res, lastErr
 }
 
 // ExecOne is an alias for DB.ExecOne.
 func (tx *Tx) ExecOne(query interface{}, params ...interface{}) (Result, error) {
-	return tx.execOne(context.Background(), query, params...)
+	return tx.execOne(tx.ctx, query, params...)
 }
 
 // ExecOneContext acts like ExecOne but additionally receives a context
@@ -170,7 +179,7 @@ func (tx *Tx) execOne(c context.Context, query interface{}, params ...interface{
 
 // Query is an alias for DB.Query.
 func (tx *Tx) Query(model interface{}, query interface{}, params ...interface{}) (Result, error) {
-	return tx.query(context.Background(), model, query, params...)
+	return tx.query(tx.ctx, model, query, params...)
 }
 
 // QueryContext acts like Query but additionally receives a context
@@ -189,38 +198,26 @@ func (tx *Tx) query(
 	query interface{},
 	params ...interface{},
 ) (Result, error) {
-	c, evt, err := tx.db.beforeQuery(c, tx, model, query, params, 0)
+	c, evt, err := tx.db.beforeQuery(c, tx, model, query, params)
 	if err != nil {
 		return nil, err
 	}
 
 	var res *result
-	err = tx.withConn(c, func(c context.Context, cn *pool.Conn) error {
+	lastErr := tx.withConn(c, func(c context.Context, cn *pool.Conn) error {
 		res, err = tx.db.simpleQueryData(c, cn, model, query, params...)
-		if err := tx.db.afterQuery(c, evt, res, err); err != nil {
-			return err
-		}
 		return err
 	})
-	if err != nil {
+
+	if err := tx.db.afterQuery(c, evt, res, lastErr); err != nil {
 		return nil, err
 	}
-
-	if res.model != nil && res.returned > 0 {
-		if m, ok := res.model.(orm.AfterScanHook); ok {
-			err = m.AfterScan(c)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return res, nil
+	return res, lastErr
 }
 
 // QueryOne is an alias for DB.QueryOne.
 func (tx *Tx) QueryOne(model interface{}, query interface{}, params ...interface{}) (Result, error) {
-	return tx.queryOne(context.Background(), model, query, params...)
+	return tx.queryOne(tx.ctx, model, query, params...)
 }
 
 // QueryOneContext acts like QueryOne but additionally receives a context
@@ -302,7 +299,7 @@ func (tx *Tx) DropTable(model interface{}, opt *orm.DropTableOptions) error {
 
 // CopyFrom is an alias for DB.CopyFrom.
 func (tx *Tx) CopyFrom(r io.Reader, query interface{}, params ...interface{}) (res Result, err error) {
-	err = tx.withConn(context.TODO(), func(c context.Context, cn *pool.Conn) error {
+	err = tx.withConn(tx.ctx, func(c context.Context, cn *pool.Conn) error {
 		res, err = tx.db.copyFrom(c, cn, r, query, params...)
 		return err
 	})
@@ -311,7 +308,7 @@ func (tx *Tx) CopyFrom(r io.Reader, query interface{}, params ...interface{}) (r
 
 // CopyTo is an alias for DB.CopyTo.
 func (tx *Tx) CopyTo(w io.Writer, query interface{}, params ...interface{}) (res Result, err error) {
-	err = tx.withConn(context.TODO(), func(c context.Context, cn *pool.Conn) error {
+	err = tx.withConn(tx.ctx, func(c context.Context, cn *pool.Conn) error {
 		res, err = tx.db.copyTo(c, cn, w, query, params...)
 		return err
 	})
@@ -359,7 +356,19 @@ func (tx *Tx) Rollback() error {
 	return err
 }
 
+// Close calls Rollback if the tx has not already beed committed or rolled back.
+func (tx *Tx) Close() error {
+	if tx.closed() {
+		return nil
+	}
+	return tx.Rollback()
+}
+
 func (tx *Tx) close() {
+	if !atomic.CompareAndSwapInt32(&tx._closed, 0, 1) {
+		return
+	}
+
 	tx.stmtsMu.Lock()
 	defer tx.stmtsMu.Unlock()
 
@@ -370,7 +379,6 @@ func (tx *Tx) close() {
 	_ = tx.db.Close()
 }
 
-// Context returns the context.Context of the transaction
-func (tx *Tx) Context() context.Context {
-	return tx.ctx
+func (tx *Tx) closed() bool {
+	return atomic.LoadInt32(&tx._closed) == 1
 }

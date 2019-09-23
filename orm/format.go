@@ -30,7 +30,7 @@ var _ QueryAppender = (*queryParamsAppender)(nil)
 var _ types.ValueAppender = (*queryParamsAppender)(nil)
 
 //nolint
-func Q(query string, params ...interface{}) *queryParamsAppender {
+func Safe(query string, params ...interface{}) *queryParamsAppender {
 	return &queryParamsAppender{query, params}
 }
 
@@ -42,12 +42,12 @@ func (q *queryParamsAppender) AppendValue(b []byte, quote int) ([]byte, error) {
 	return q.AppendQuery(defaultFmter, b)
 }
 
-func (q *queryParamsAppender) Value() types.Q {
+func (q *queryParamsAppender) Value() types.Safe {
 	b, err := q.AppendValue(nil, 1)
 	if err != nil {
-		return types.Q(err.Error())
+		return types.Safe(err.Error())
 	}
-	return types.Q(internal.BytesToString(b))
+	return types.Safe(internal.BytesToString(b))
 }
 
 //------------------------------------------------------------------------------
@@ -103,19 +103,6 @@ func (q *condAppender) AppendQuery(fmter QueryFormatter, b []byte) ([]byte, erro
 
 //------------------------------------------------------------------------------
 
-type columnAppender struct {
-	sqlName string
-	column  types.Q
-}
-
-var _ QueryAppender = (*columnAppender)(nil)
-
-func (a columnAppender) AppendQuery(fmter QueryFormatter, b []byte) ([]byte, error) {
-	return append(b, a.column...), nil
-}
-
-//------------------------------------------------------------------------------
-
 type fieldAppender struct {
 	field string
 }
@@ -123,7 +110,7 @@ type fieldAppender struct {
 var _ QueryAppender = (*fieldAppender)(nil)
 
 func (a fieldAppender) AppendQuery(fmter QueryFormatter, b []byte) ([]byte, error) {
-	return types.AppendField(b, a.field, 1), nil
+	return types.AppendIdent(b, a.field, 1), nil
 }
 
 //------------------------------------------------------------------------------
@@ -144,10 +131,16 @@ func isPlaceholderFormatter(fmter QueryFormatter) bool {
 
 //------------------------------------------------------------------------------
 
+type QueryFormatter interface {
+	FormatQuery(b []byte, query string, params ...interface{}) []byte
+}
+
 type Formatter struct {
 	namedParams map[string]interface{}
 	model       TableModel
 }
+
+var _ QueryFormatter = (*Formatter)(nil)
 
 func (f Formatter) String() string {
 	if len(f.namedParams) == 0 {

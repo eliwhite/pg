@@ -310,6 +310,16 @@ var _ = Describe("With", func() {
 		s := selectQueryString(q)
 		Expect(s).To(Equal(`WITH "wrapper" AS (DELETE FROM "select_models" AS "select_model" WHERE (cond1)) SELECT * FROM "wrapper" WHERE (cond2)`))
 	})
+
+	It("supports Union", func() {
+		q1 := NewQuery(nil, &SelectModel{}).Where("1 = 1")
+		q := NewQuery(nil, &SelectModel{}).
+			Where("2 = 2").
+			Union(q1)
+
+		s := selectQueryString(q)
+		Expect(s).To(Equal(`SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (2 = 2) UNION SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (1 = 1)`))
+	})
 })
 
 type orderTest struct {
@@ -342,6 +352,29 @@ type SoftDeleteModel struct {
 	DeletedAt time.Time `pg:",soft_delete"`
 }
 
+type SoftDeleteParent struct {
+	Id          uint64 `sql:"id,pk"`
+	Name        string
+	DateDeleted *time.Time `pg:",soft_delete"`
+
+	Children *SoftDeleteChild
+}
+
+type SoftDeleteChild struct {
+	Id                 uint64            `sql:"id,pk"`
+	SoftDeleteParentId uint64            `sql:"soft_delete_parent_id,on_delete:CASCADE"`
+	SoftDeleteParent   *SoftDeleteParent `sql:"-"`
+	Name               string
+	SubChildren        *SoftDeleteSubChild
+}
+
+type SoftDeleteSubChild struct {
+	Id                uint64           `sql:"id,pk"`
+	SoftDeleteChildId uint64           `sql:"soft_delete_child_id,on_delete:CASCADE"`
+	SoftDeleteChild   *SoftDeleteChild `sql:"-"`
+	Name              string
+}
+
 var _ = Describe("SoftDeleteModel", func() {
 	It("filters out deleted rows by default", func() {
 		q := NewQuery(nil, &SoftDeleteModel{})
@@ -362,6 +395,13 @@ var _ = Describe("SoftDeleteModel", func() {
 
 		s := selectQueryString(q)
 		Expect(s).To(Equal(`SELECT "soft_delete_model"."id", "soft_delete_model"."deleted_at" FROM "soft_delete_models" AS "soft_delete_model"`))
+	})
+
+	It("will respect join SoftDelete", func() {
+		q := NewQuery(nil, &SoftDeleteParent{}).Relation("Children").Relation("Children.SubChildren")
+
+		s := selectQueryString(q)
+		Expect(s).To(Equal(`SELECT "soft_delete_parent"."id", "soft_delete_parent"."name", "soft_delete_parent"."date_deleted", "children"."id" AS "children__id", "children"."soft_delete_parent_id" AS "children__soft_delete_parent_id", "children"."name" AS "children__name", "children__sub_children"."id" AS "children__sub_children__id", "children__sub_children"."soft_delete_child_id" AS "children__sub_children__soft_delete_child_id", "children__sub_children"."name" AS "children__sub_children__name" FROM "soft_delete_parents" AS "soft_delete_parent" LEFT JOIN "soft_delete_children" AS "children" ON "children"."soft_delete_parent_id" = "soft_delete_parent"."id" LEFT JOIN "soft_delete_sub_children" AS "children__sub_children" ON "children__sub_children"."soft_delete_child_id" = "children"."id" WHERE "soft_delete_parent"."date_deleted" IS NULL`))
 	})
 })
 

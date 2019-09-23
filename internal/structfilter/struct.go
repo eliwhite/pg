@@ -2,6 +2,7 @@ package structfilter
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/vmihailenco/tagparser"
 
@@ -10,7 +11,7 @@ import (
 )
 
 type Struct struct {
-	TableName types.Q
+	TableName types.Safe
 	Fields    []*Field
 }
 
@@ -20,6 +21,17 @@ func NewStruct(typ reflect.Type) *Struct {
 	}
 	addFields(s, typ, nil)
 	return s
+}
+
+func (s *Struct) Decode(strct reflect.Value, name string, values []string) error {
+	name = strings.TrimPrefix(name, ":")
+	name = strings.TrimSuffix(name, "[]")
+
+	field := s.Field(name)
+	if field == nil || field.NoDecode() {
+		return nil
+	}
+	return field.ScanValue(field.Value(strct), values)
 }
 
 func (s *Struct) Field(name string) *Field {
@@ -59,7 +71,7 @@ func addFields(s *Struct, typ reflect.Type, baseIndex []int) {
 		if sf.Name == "tableName" {
 			sqlTag := tagparser.Parse(sf.Tag.Get("sql"))
 			name, _ := tagparser.Unquote(sqlTag.Name)
-			s.TableName = types.Q(internal.QuoteTableName(name))
+			s.TableName = types.Safe(internal.QuoteTableName(name))
 			continue
 		}
 

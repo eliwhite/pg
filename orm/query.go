@@ -14,6 +14,14 @@ import (
 	"github.com/go-pg/pg/v9/types"
 )
 
+type queryFlag uint8
+
+const (
+	implicitModelFlag queryFlag = 1 << iota
+	deletedFlag
+	allWithDeletedFlag
+)
+
 type withQuery struct {
 	name  string
 	query QueryAppender
@@ -33,13 +41,10 @@ type columnValue struct {
 	value  *queryParamsAppender
 }
 
-type queryFlag uint8
-
-const (
-	implicitModelFlag queryFlag = 1 << iota
-	deletedFlag
-	allWithDeletedFlag
-)
+type union struct {
+	expr  string
+	query *Query
+}
 
 type Query struct {
 	ctx       context.Context
@@ -58,16 +63,18 @@ type Query struct {
 	extraValues  []*columnValue
 	where        []queryWithSepAppender
 	updWhere     []queryWithSepAppender
-	joins        []*joinQuery
-	joinAppendOn func(app *condAppender)
 	group        []QueryAppender
 	having       []*queryParamsAppender
+	union        []*union
+	joins        []*joinQuery
+	joinAppendOn func(app *condAppender)
 	order        []QueryAppender
-	onConflict   *queryParamsAppender
-	returning    []*queryParamsAppender
 	limit        int
 	offset       int
 	selFor       *queryParamsAppender
+
+	onConflict *queryParamsAppender
+	returning  []*queryParamsAppender
 }
 
 func NewQuery(db DB, model ...interface{}) *Query {
@@ -119,12 +126,14 @@ func (q *Query) Clone() *Query {
 		joins:       q.joins[:len(q.joins):len(q.joins)],
 		group:       q.group[:len(q.group):len(q.group)],
 		having:      q.having[:len(q.having):len(q.having)],
+		union:       q.union[:len(q.union):len(q.union)],
 		order:       q.order[:len(q.order):len(q.order)],
-		onConflict:  q.onConflict,
-		returning:   q.returning[:len(q.returning):len(q.returning)],
 		limit:       q.limit,
 		offset:      q.offset,
 		selFor:      q.selFor,
+
+		onConflict: q.onConflict,
+		returning:  q.returning[:len(q.returning):len(q.returning)],
 	}
 
 	return copy
@@ -305,10 +314,7 @@ func (q *Query) ColumnExpr(expr string, params ...interface{}) *Query {
 func (q *Query) ExcludeColumn(columns ...string) *Query {
 	if q.columns == nil {
 		for _, f := range q.model.Table().Fields {
-			q.columns = append(q.columns, columnAppender{
-				sqlName: f.SQLName,
-				column:  f.Column,
-			})
+			q.columns = append(q.columns, fieldAppender{f.SQLName})
 		}
 	}
 
@@ -322,8 +328,8 @@ func (q *Query) ExcludeColumn(columns ...string) *Query {
 
 func (q *Query) excludeColumn(column string) bool {
 	for i := 0; i < len(q.columns); i++ {
-		app, ok := q.columns[i].(columnAppender)
-		if ok && app.sqlName == column {
+		app, ok := q.columns[i].(fieldAppender)
+		if ok && app.field == column {
 			q.columns = append(q.columns[:i], q.columns[i+1:]...)
 			return true
 		}
@@ -637,6 +643,38 @@ func (q *Query) Having(having string, params ...interface{}) *Query {
 	return q
 }
 
+func (q *Query) Union(other *Query) *Query {
+	return q.addUnion(" UNION ", other)
+}
+
+func (q *Query) UnionAll(other *Query) *Query {
+	return q.addUnion(" UNION ALL ", other)
+}
+
+func (q *Query) Intersect(other *Query) *Query {
+	return q.addUnion(" INTERSECT ", other)
+}
+
+func (q *Query) IntersectAll(other *Query) *Query {
+	return q.addUnion(" INTERSECT ALL ", other)
+}
+
+func (q *Query) Except(other *Query) *Query {
+	return q.addUnion(" EXCEPT ", other)
+}
+
+func (q *Query) ExceptAll(other *Query) *Query {
+	return q.addUnion(" EXCEPT ALL ", other)
+}
+
+func (q *Query) addUnion(expr string, other *Query) *Query {
+	q.union = append(q.union, &union{
+		expr:  expr,
+		query: other,
+	})
+	return q
+}
+
 // Order adds sort order to the Query quoting column name. Does not expand params like ?TableAlias etc.
 // OrderExpr can be used to bypass quoting restriction or for params expansion.
 func (q *Query) Order(orders ...string) *Query {
@@ -652,7 +690,7 @@ loop:
 			switch internal.UpperString(sort) {
 			case "ASC", "DESC", "ASC NULLS FIRST", "DESC NULLS FIRST",
 				"ASC NULLS LAST", "DESC NULLS LAST":
-				q = q.OrderExpr("? ?", types.F(field), types.Q(sort))
+				q = q.OrderExpr("? ?", types.Ident(field), types.Safe(sort))
 				continue loop
 			}
 		}
@@ -1226,7 +1264,7 @@ func (q *Query) AppendQuery(fmter QueryFormatter, b []byte) ([]byte, error) {
 // Exists returns true or false depending if there are any rows matching the query.
 func (q *Query) Exists() (bool, error) {
 	cp := q.Clone() // copy to not change original query
-	cp.columns = []QueryAppender{Q("1")}
+	cp.columns = []QueryAppender{Safe("1")}
 	cp.order = nil
 	cp.limit = 1
 	res, err := q.db.ExecContext(q.ctx, newSelectQuery(cp))
@@ -1449,7 +1487,7 @@ func (q *Query) appendWith(fmter QueryFormatter, b []byte) (_ []byte, err error)
 		if i > 0 {
 			b = append(b, ", "...)
 		}
-		b = types.AppendField(b, with.name, 1)
+		b = types.AppendIdent(b, with.name, 1)
 		b = append(b, " AS ("...)
 
 		b, err = with.query.AppendQuery(fmter, b)
@@ -1493,7 +1531,7 @@ func (q wherePKQuery) AppendQuery(fmter QueryFormatter, b []byte) ([]byte, error
 }
 
 func appendColumnAndValue(
-	fmter QueryFormatter, b []byte, v reflect.Value, alias types.Q, fields []*Field,
+	fmter QueryFormatter, b []byte, v reflect.Value, alias types.Safe, fields []*Field,
 ) []byte {
 	isPlaceholder := isPlaceholderFormatter(fmter)
 	for i, f := range fields {
@@ -1514,7 +1552,7 @@ func appendColumnAndValue(
 }
 
 func appendColumnAndSliceValue(
-	fmter QueryFormatter, b []byte, slice reflect.Value, alias types.Q, fields []*Field,
+	fmter QueryFormatter, b []byte, slice reflect.Value, alias types.Safe, fields []*Field,
 ) []byte {
 	if len(fields) > 1 {
 		b = append(b, '(')

@@ -75,7 +75,6 @@ func appender(typ reflect.Type, pgArray bool) AppenderFunc {
 	if typ.Implements(appenderType) {
 		return appendAppenderValue
 	}
-
 	if typ.Implements(driverValuerType) {
 		return appendDriverValuerValue
 	}

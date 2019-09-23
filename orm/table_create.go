@@ -122,8 +122,11 @@ func (q *createTableQuery) AppendQuery(fmter QueryFormatter, b []byte) (_ []byte
 }
 
 func (q *createTableQuery) appendSQLType(b []byte, field *Field) []byte {
+	if field.UserSQLType != "" {
+		return append(b, field.UserSQLType...)
+	}
 	if q.opt != nil && q.opt.Varchar > 0 &&
-		field.SQLType == "text" && !field.HasFlag(customTypeFlag) {
+		field.SQLType == "text" {
 		b = append(b, "varchar("...)
 		b = strconv.AppendInt(b, int64(q.opt.Varchar), 10)
 		b = append(b, ")"...)
@@ -193,7 +196,7 @@ func (q createTableQuery) appendFKConstraint(fmter QueryFormatter, b []byte, rel
 	return b
 }
 
-func (q createTableQuery) appendTablespace(b []byte, tableSpace types.Q) []byte {
+func (q createTableQuery) appendTablespace(b []byte, tableSpace types.Safe) []byte {
 	b = append(b, " TABLESPACE "...)
 	b = append(b, tableSpace...)
 	return b

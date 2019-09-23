@@ -8,8 +8,8 @@ import (
 	"github.com/vmihailenco/tagparser"
 
 	"github.com/go-pg/pg/v9/internal"
-	"github.com/go-pg/pg/v9/internal/iszero"
 	"github.com/go-pg/pg/v9/types"
+	"github.com/go-pg/zerochecker"
 )
 
 type opCode int
@@ -51,9 +51,9 @@ type Field struct {
 	required bool
 	noWhere  bool
 
-	Scan   ScanFunc
-	Append types.AppenderFunc
-	isZero iszero.Func
+	ScanValue   ScanFunc
+	AppendValue types.AppenderFunc
+	isZeroValue zerochecker.Func
 }
 
 func newField(sf reflect.StructField) *Field {
@@ -75,22 +75,25 @@ func newField(sf reflect.StructField) *Field {
 	_, f.noDecode = pgTag.Options["nodecode"]
 	_, f.noWhere = pgTag.Options["nowhere"]
 	if f.required && f.noWhere {
-		err := fmt.Errorf("required and nowhere tags can't be set together")
+		err := fmt.Errorf("pg: required and nowhere tags can't be set together")
 		panic(err)
 	}
 
-	if f.IsSlice {
-		f.Column, f.opCode, f.OpValue = splitSliceColumnOperator(f.name)
-		f.Scan = arrayScanner(sf.Type)
-		f.Append = types.ArrayAppender(sf.Type)
-	} else {
-		f.Column, f.opCode, f.OpValue = splitColumnOperator(f.name, "_")
-		f.Scan = scanner(sf.Type)
-		f.Append = types.Appender(sf.Type)
-	}
-	f.isZero = iszero.Checker(sf.Type)
+	name := internal.Underscore(f.name)
+	const sep = "_"
 
-	if f.Scan == nil || f.Append == nil {
+	if f.IsSlice {
+		f.Column, f.opCode, f.OpValue = splitSliceColumnOperator(name, sep)
+		f.ScanValue = arrayScanner(sf.Type)
+		f.AppendValue = types.ArrayAppender(sf.Type)
+	} else {
+		f.Column, f.opCode, f.OpValue = splitColumnOperator(name, sep)
+		f.ScanValue = scanner(sf.Type)
+		f.AppendValue = types.Appender(sf.Type)
+	}
+	f.isZeroValue = zerochecker.Checker(sf.Type)
+
+	if f.ScanValue == nil || f.AppendValue == nil {
 		return nil
 	}
 
@@ -106,11 +109,10 @@ func (f *Field) Value(strct reflect.Value) reflect.Value {
 }
 
 func (f *Field) Omit(value reflect.Value) bool {
-	return !f.required && f.noWhere || f.isZero(value)
+	return !f.required && f.noWhere || f.isZeroValue(value)
 }
 
 func splitColumnOperator(s, sep string) (string, opCode, string) {
-	s = internal.Underscore(s)
 	ind := strings.LastIndex(s, sep)
 	if ind == -1 {
 		return s, opCodeEq, opEq
@@ -141,15 +143,14 @@ func splitColumnOperator(s, sep string) (string, opCode, string) {
 	}
 }
 
-func splitSliceColumnOperator(s string) (string, opCode, string) {
-	s = internal.Underscore(s)
-	ind := strings.LastIndexByte(s, '_')
+func splitSliceColumnOperator(s, sep string) (string, opCode, string) {
+	ind := strings.LastIndex(s, sep)
 	if ind == -1 {
 		return s, opCodeEq, opAny
 	}
 
 	col := s[:ind]
-	op := s[ind+1:]
+	op := s[ind+len(sep):]
 
 	switch op {
 	case "eq", "":

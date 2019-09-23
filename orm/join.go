@@ -132,7 +132,7 @@ func (j *join) m2mQuery(fmter QueryFormatter, q *Query) (*Query, error) {
 		}
 		join = append(join, j.Rel.M2MTableAlias...)
 		join = append(join, '.')
-		join = append(join, col...)
+		join = types.AppendIdent(join, col, 1)
 	}
 	join = append(join, ") IN ("...)
 	join = appendChildValues(join, j.BaseModel.Root(), index, baseTable.PKs)
@@ -147,7 +147,7 @@ func (j *join) m2mQuery(fmter QueryFormatter, q *Query) (*Query, error) {
 		pk := joinTable.PKs[i]
 		q = q.Where("?.? = ?.?",
 			joinTable.Alias, pk.Column,
-			j.Rel.M2MTableAlias, types.F(col))
+			j.Rel.M2MTableAlias, types.Ident(col))
 	}
 
 	return q, nil
@@ -219,7 +219,7 @@ func (j *join) appendHasOneColumns(b []byte) []byte {
 		}
 		b = j.appendAlias(b)
 		b = append(b, '.')
-		b = types.AppendField(b, column, 1)
+		b = types.AppendIdent(b, column, 1)
 		b = append(b, " AS "...)
 		b = j.appendAliasColumn(b, column)
 	}
@@ -228,7 +228,7 @@ func (j *join) appendHasOneColumns(b []byte) []byte {
 }
 
 func (j *join) appendHasOneJoin(fmter QueryFormatter, b []byte, q *Query) (_ []byte, err error) {
-	isSoftDelete := q.isSoftDelete()
+	isSoftDelete := j.JoinModel.Table().SoftDeleteField != nil && !q.hasFlag(allWithDeletedFlag)
 
 	b = append(b, "LEFT JOIN "...)
 	b = fmter.FormatQuery(b, string(j.JoinModel.Table().FullNameForSelects))
@@ -319,7 +319,7 @@ func (q *hasManyColumnsAppender) AppendQuery(fmter QueryFormatter, b []byte) ([]
 			}
 			b = append(b, joinTable.Alias...)
 			b = append(b, '.')
-			b = types.AppendField(b, column, 1)
+			b = types.AppendIdent(b, column, 1)
 		}
 		return b, nil
 	}
