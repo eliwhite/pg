@@ -18,7 +18,7 @@ func (e ValuerError) Value() (driver.Value, error) {
 }
 
 type StructFormatter struct {
-	tableName struct{} `sql:"my_name,alias:my_alias"`
+	tableName struct{} `pg:"my_name,alias:my_alias"`
 
 	String  string
 	UseZero string `pg:",use_zero"`
@@ -133,7 +133,7 @@ var formatTests = []formatTest{
 	},
 	{
 		q:         "?",
-		params:    params{orm.Safe("?string")},
+		params:    params{orm.SafeQuery("?string")},
 		paramsMap: paramsMap{"string": "my_value"},
 		wanted:    "'my_value'",
 	},
@@ -147,7 +147,7 @@ var formatTests = []formatTest{
 
 func TestFormatQuery(t *testing.T) {
 	for i, test := range formatTests {
-		var f orm.Formatter
+		f := orm.NewFormatter()
 		for k, v := range test.paramsMap {
 			f = f.WithParam(k, v)
 		}

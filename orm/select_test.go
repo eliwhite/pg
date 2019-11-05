@@ -8,11 +8,11 @@ import (
 )
 
 type User struct {
-	tableName struct{} `sql:"user"`
+	tableName struct{} `pg:"user"`
 }
 
 type User2 struct {
-	tableName struct{} `sql:"select:user,alias:user"`
+	tableName struct{} `pg:"select:user,alias:user"`
 }
 
 type SelectModel struct {
@@ -258,6 +258,23 @@ var _ = Describe("Count", func() {
 		s := queryString(q.countSelectQuery("count(*)"))
 		Expect(s).To(Equal(`WITH "_count_wrapper" AS (SELECT DISTINCT group_id) SELECT count(*) FROM "_count_wrapper"`))
 	})
+
+	It("supports Union", func() {
+		q1 := NewQuery(nil, &SelectModel{}).Where("1 = 1")
+		q := NewQuery(nil, &SelectModel{}).
+			Where("2 = 2").
+			Union(q1)
+
+		s := selectQueryString(q)
+		Expect(s).To(Equal(`SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (2 = 2) UNION SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (1 = 1)`))
+	})
+
+	It("supports empty WhereStruct", func() {
+		q := NewQuery(nil, &SelectModel{}).WhereStruct(struct{}{})
+
+		s := selectQueryString(q)
+		Expect(s).To(Equal(`SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE TRUE`))
+	})
 })
 
 var _ = Describe("With", func() {
@@ -310,16 +327,6 @@ var _ = Describe("With", func() {
 		s := selectQueryString(q)
 		Expect(s).To(Equal(`WITH "wrapper" AS (DELETE FROM "select_models" AS "select_model" WHERE (cond1)) SELECT * FROM "wrapper" WHERE (cond2)`))
 	})
-
-	It("supports Union", func() {
-		q1 := NewQuery(nil, &SelectModel{}).Where("1 = 1")
-		q := NewQuery(nil, &SelectModel{}).
-			Where("2 = 2").
-			Union(q1)
-
-		s := selectQueryString(q)
-		Expect(s).To(Equal(`SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (2 = 2) UNION SELECT "select_model"."id", "select_model"."name", "select_model"."has_one_id" FROM "select_models" AS "select_model" WHERE (1 = 1)`))
-	})
 })
 
 type orderTest struct {
@@ -347,13 +354,20 @@ var _ = Describe("Select Order", func() {
 	})
 })
 
+type NonSoftDeleteModel struct {
+	Id                int `pg:",pk"`
+	Name              string
+	SoftDeleteModelId int
+	SoftDeleteModel   *SoftDeleteModel
+}
+
 type SoftDeleteModel struct {
 	Id        int
 	DeletedAt time.Time `pg:",soft_delete"`
 }
 
 type SoftDeleteParent struct {
-	Id          uint64 `sql:"id,pk"`
+	Id          uint64 `pg:"id,pk"`
 	Name        string
 	DateDeleted *time.Time `pg:",soft_delete"`
 
@@ -361,17 +375,17 @@ type SoftDeleteParent struct {
 }
 
 type SoftDeleteChild struct {
-	Id                 uint64            `sql:"id,pk"`
-	SoftDeleteParentId uint64            `sql:"soft_delete_parent_id,on_delete:CASCADE"`
-	SoftDeleteParent   *SoftDeleteParent `sql:"-"`
+	Id                 uint64            `pg:"id,pk"`
+	SoftDeleteParentId uint64            `pg:"soft_delete_parent_id,on_delete:CASCADE"`
+	SoftDeleteParent   *SoftDeleteParent `pg:"-"`
 	Name               string
 	SubChildren        *SoftDeleteSubChild
 }
 
 type SoftDeleteSubChild struct {
-	Id                uint64           `sql:"id,pk"`
-	SoftDeleteChildId uint64           `sql:"soft_delete_child_id,on_delete:CASCADE"`
-	SoftDeleteChild   *SoftDeleteChild `sql:"-"`
+	Id                uint64           `pg:"id,pk"`
+	SoftDeleteChildId uint64           `pg:"soft_delete_child_id,on_delete:CASCADE"`
+	SoftDeleteChild   *SoftDeleteChild `pg:"-"`
 	Name              string
 }
 
@@ -403,6 +417,13 @@ var _ = Describe("SoftDeleteModel", func() {
 		s := selectQueryString(q)
 		Expect(s).To(Equal(`SELECT "soft_delete_parent"."id", "soft_delete_parent"."name", "soft_delete_parent"."date_deleted", "children"."id" AS "children__id", "children"."soft_delete_parent_id" AS "children__soft_delete_parent_id", "children"."name" AS "children__name", "children__sub_children"."id" AS "children__sub_children__id", "children__sub_children"."soft_delete_child_id" AS "children__sub_children__soft_delete_child_id", "children__sub_children"."name" AS "children__sub_children__name" FROM "soft_delete_parents" AS "soft_delete_parent" LEFT JOIN "soft_delete_children" AS "children" ON "children"."soft_delete_parent_id" = "soft_delete_parent"."id" LEFT JOIN "soft_delete_sub_children" AS "children__sub_children" ON "children__sub_children"."soft_delete_child_id" = "children"."id" WHERE "soft_delete_parent"."date_deleted" IS NULL`))
 	})
+
+	It("will join a non-SoftDelete with a SoftDelete", func() {
+		q := NewQuery(nil, &NonSoftDeleteModel{}).Relation("SoftDeleteModel")
+
+		s := selectQueryString(q)
+		Expect(s).To(Equal(`SELECT "non_soft_delete_model"."id", "non_soft_delete_model"."name", "non_soft_delete_model"."soft_delete_model_id", "soft_delete_model"."id" AS "soft_delete_model__id", "soft_delete_model"."deleted_at" AS "soft_delete_model__deleted_at" FROM "non_soft_delete_models" AS "non_soft_delete_model" LEFT JOIN "soft_delete_models" AS "soft_delete_model" ON ("soft_delete_model"."id" = "non_soft_delete_model"."soft_delete_model_id") AND "soft_delete_model"."deleted_at" IS NULL`))
+	})
 })
 
 func selectQueryString(q *Query) string {
@@ -412,7 +433,7 @@ func selectQueryString(q *Query) string {
 }
 
 func queryString(f QueryAppender) string {
-	fmter := Formatter{}.WithModel(f)
+	fmter := NewFormatter().WithModel(f)
 	b, err := f.AppendQuery(fmter, nil)
 	Expect(err).NotTo(HaveOccurred())
 	return string(b)

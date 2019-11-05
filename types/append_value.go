@@ -3,9 +3,11 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"net"
 	"reflect"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-pg/pg/v9/internal"
@@ -18,11 +20,11 @@ var appenderType = reflect.TypeOf((*ValueAppender)(nil)).Elem()
 
 type AppenderFunc func([]byte, reflect.Value, int) []byte
 
-var valueAppenders []AppenderFunc
+var appenders []AppenderFunc
 
 //nolint
 func init() {
-	valueAppenders = []AppenderFunc{
+	appenders = []AppenderFunc{
 		reflect.Bool:          appendBoolValue,
 		reflect.Int:           appendIntValue,
 		reflect.Int8:          appendIntValue,
@@ -52,8 +54,31 @@ func init() {
 	}
 }
 
+var appendersMap sync.Map
+
+// RegisterAppender registers an appender func for the type.
+// Expecting to be used only during initialization, it panics
+// if there is already a registered appender for the given type.
+func RegisterAppender(value interface{}, fn AppenderFunc) {
+	registerAppender(reflect.TypeOf(value), fn)
+}
+
+func registerAppender(typ reflect.Type, fn AppenderFunc) {
+	_, loaded := appendersMap.LoadOrStore(typ, fn)
+	if loaded {
+		err := fmt.Errorf("pg: appender for the type=%s is already registered",
+			typ.String())
+		panic(err)
+	}
+}
+
 func Appender(typ reflect.Type) AppenderFunc {
-	return appender(typ, false)
+	if v, ok := appendersMap.Load(typ); ok {
+		return v.(AppenderFunc)
+	}
+	fn := appender(typ, false)
+	_, _ = appendersMap.LoadOrStore(typ, fn)
+	return fn
 }
 
 func appender(typ reflect.Type, pgArray bool) AppenderFunc {
@@ -95,7 +120,7 @@ func appender(typ reflect.Type, pgArray bool) AppenderFunc {
 			return appendArrayBytesValue
 		}
 	}
-	return valueAppenders[kind]
+	return appenders[kind]
 }
 
 func ptrAppenderFunc(typ reflect.Type) AppenderFunc {

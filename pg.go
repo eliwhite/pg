@@ -35,9 +35,15 @@ func Scan(values ...interface{}) orm.ColumnScanner {
 	return orm.Scan(values...)
 }
 
-// Safe replaces any placeholders found in the query.
-func Safe(query string, params ...interface{}) types.ValueAppender {
-	return orm.Safe(query, params...)
+// Safe represents a safe SQL query.
+type Safe = types.Safe
+
+// Ident represents a SQL identifier, e.g. table or column name.
+type Ident = types.Ident
+
+// SafeQuery replaces any placeholders found in the query.
+func SafeQuery(query string, params ...interface{}) *orm.SafeQueryAppender {
+	return orm.SafeQuery(query, params...)
 }
 
 var qWarn sync.Once
@@ -45,15 +51,9 @@ var qWarn sync.Once
 // DEPRECATED. Use Safe instead.
 func Q(query string, params ...interface{}) types.ValueAppender {
 	qWarn.Do(func() {
-		internal.Logger.Printf("DEPRECATED: pg.Q is replaced with pg.Safe")
+		internal.Logger.Printf("DEPRECATED: pg.Q is replaced with pg.SafeQuery")
 	})
-	return Safe(query, params...)
-}
-
-// Ident quotes a SQL identifier such as a table or column name replacing any
-// placeholders found in the field.
-func Ident(field string) types.ValueAppender {
-	return types.Ident(field)
+	return SafeQuery(query, params...)
 }
 
 var fWarn sync.Once
@@ -75,7 +75,7 @@ func F(field string) types.ValueAppender {
 //
 //    WHERE id IN (1, 2, 3, 4)
 func In(slice interface{}) types.ValueAppender {
-	return types.InSlice(slice)
+	return types.In(slice)
 }
 
 // InMulti accepts multiple values and returns a wrapper that can be used
@@ -95,7 +95,7 @@ func InMulti(values ...interface{}) types.ValueAppender {
 //
 // For struct fields you can use array tag:
 //
-//    Emails  []string `sql:",array"`
+//    Emails  []string `pg:",array"`
 func Array(v interface{}) *types.Array {
 	return types.NewArray(v)
 }
@@ -106,7 +106,7 @@ func Array(v interface{}) *types.Array {
 //
 // For struct fields you can use hstore tag:
 //
-//    Attrs map[string]string `sql:",hstore"`
+//    Attrs map[string]string `pg:",hstore"`
 func Hstore(v interface{}) *types.Hstore {
 	return types.NewHstore(v)
 }
